@@ -37,6 +37,8 @@ export interface AppState {
   defaultProfile?: string;
   /** True once the user picked a profile in this session; auto-picked ones may be swapped on auth failure */
   profileChosen: boolean;
+  /** 'needed' when this PC has no AWS profiles yet: the stage shows the setup guide instead of collecting */
+  setup: 'checking' | 'needed' | 'done';
   collectorLabels: Record<string, string>;
   profile: string;
   region: string;
@@ -120,6 +122,7 @@ const ALL_ON: Record<Category, boolean> = { compute: true, network: true, databa
 export const useStore = create<AppState>((set, get) => ({
   profiles: [],
   profileChosen: false,
+  setup: 'checking',
   collectorLabels: {},
   profile: loadPrefs().profile ?? '',
   region: loadPrefs().region ?? '',
@@ -144,12 +147,17 @@ export const useStore = create<AppState>((set, get) => ({
   async bootstrap() {
     document.documentElement.dataset.theme = get().theme;
     const [{ profiles, defaultProfile }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
+    // Nothing configured on this PC yet: guide the setup rather than try a profile that does not exist.
+    if (!profiles.length) {
+      set({ profiles, defaultProfile, collectorLabels, setup: 'needed' });
+      return;
+    }
     const wanted = get().profile;
     const profile = profiles.find((p) => p.name === wanted)?.name ?? defaultProfile;
     // No saved region and none in the profile: wait for the person to pick one rather than guess.
     const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
     // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
-    set({ profiles, defaultProfile, collectorLabels, profile, region });
+    set({ profiles, defaultProfile, collectorLabels, profile, region, setup: 'done' });
     void get().load(false);
     fetchRegions(profile, region);
   },

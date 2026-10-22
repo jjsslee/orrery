@@ -40,7 +40,8 @@ npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 
 ```
 
 - macOS에서 실행합니다(macOS 실행파일은 `codesign`으로 ad-hoc 서명해야 Apple Silicon에서 실행됨).
-- 결과는 `release/orrery-macos-arm64`, `release/orrery-macos-x64`, `release/orrery-windows-x64.exe`입니다. 크기는 대부분 Node 런타임입니다.
+- 결과는 `release/orrery-macos-arm64`, `release/orrery-macos-x64`, `release/orrery-windows-x64.exe`와 각각의 `.zip`입니다. 크기는 대부분 Node 런타임입니다. macOS 실행파일은 확장자가 없는 Unix 실행 파일입니다.
+- 전달은 `.zip`으로 합니다. 실행파일을 그대로 브라우저·메신저·클라우드 드라이브로 보내면 실행 권한이 빠져 Finder가 문서로 엽니다. 그렇게 받았다면 `chmod +x orrery-macos-arm64`로 권한을 되돌립니다.
 - `scripts/package.mjs`가 서버를 CommonJS 한 파일로 묶고, `web/dist`를 SEA 자산으로 넣은 blob을 공식 Node 런타임(`NODE_VERSION`, 현재 24 LTS)에 `postject`로 주입합니다. 런타임은 nodejs.org에서 한 번 받아 `release/.node/`에 두며 `SHASUMS256.txt`로 검증합니다. Node 버전을 올릴 때는 이 상수만 바꿉니다.
 - Windows `node.exe`의 Authenticode 서명은 주입하면 깨지므로 제거합니다. 배포용 서명은 별도로 해야 합니다.
 
@@ -49,7 +50,7 @@ npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 
 - 더블클릭하면 콘솔 창에 주소를 출력하고 기본 브라우저를 엽니다. 창을 닫거나 `Ctrl+C`로 종료합니다.
 - 포트는 4820을 우선 씁니다(브라우저가 프로필·리전 선택을 주소별로 기억하므로). 이미 Orrery가 떠 있으면 그 창만 열고 끝나며, 다른 프로그램이 쓰고 있으면 빈 포트를 고릅니다.
 - 캐시는 `~/Library/Application Support/Orrery/cache`(macOS) 또는 `%LOCALAPPDATA%\Orrery\cache`(Windows)에 둡니다. `.env`는 읽지 않으며 설정은 환경 변수로만 줍니다.
-- 프로필을 만들거나 SSO 로그인을 하려면 AWS CLI(`aws configure`, `aws sso login`)가 필요합니다.
+- 프로필을 만들거나 SSO 로그인을 하려면 AWS CLI(`aws configure`, `aws sso login`)가 필요합니다. 프로필이 하나도 없으면 첫 화면에서 OS별 AWS CLI 설치와 `aws configure` / `aws configure sso` / `aws sso login`을 안내하고, 설정 후 **다시 확인**을 누르면 재시작 없이 새 프로필을 읽습니다.
 
 ## 읽기 전용 보장
 

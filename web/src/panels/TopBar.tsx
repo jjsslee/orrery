@@ -38,6 +38,7 @@ export function TopBar() {
         <Dropdown
           label="AWS 프로필"
           value={profile}
+          placeholder={profiles.length ? '프로필 선택' : '프로필 없음'}
           onChange={(v) => void setProfile(v)}
           mono
           width={210}

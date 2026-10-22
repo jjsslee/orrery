@@ -240,6 +240,24 @@
 .empty-sub { font-size: 12.5px; line-height: 1.5; }
 .empty-action { display: flex; justify-content: center; margin-top: 14px; text-align: left; }
 
+/* ---------- first-run setup guide ---------- */
+.setup { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px 16px; overflow: auto; }
+.setup-card { width: 560px; max-width: 100%; padding: 20px 22px 22px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius-l); box-shadow: var(--shadow-pop); animation: fade 200ms; }
+.setup-card h1 { margin: 0; }
+.setup-steps { list-style: none; counter-reset: step; margin: 4px 0 0; padding: 0; display: grid; gap: 16px; }
+.setup-steps > li { counter-increment: step; position: relative; padding: 14px 0 0 34px; border-top: 1px solid var(--line); }
+.setup-steps > li::before { content: counter(step); position: absolute; left: 0; top: 13px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--panel-3); color: var(--ink); font: 600 12px var(--font-mono); }
+.setup-step-title { color: var(--ink); font-weight: 600; margin-bottom: 6px; }
+.setup-steps p { margin: 8px 0 6px; color: var(--ink-2); font-size: 12.5px; line-height: 1.55; word-break: keep-all; }
+.setup-steps p b { color: var(--ink); font-weight: 600; }
+.setup-steps .setup-note { color: var(--ink-3); font-size: 12px; }
+.setup-cmd { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 2px 2px 2px 12px; border-radius: var(--radius-s); background: var(--canvas-deep); border: 1px solid var(--line); }
+.setup-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--ink); font-size: 12px; user-select: all; }
+.setup-cmd .icon-btn { flex: none; width: 28px; height: 28px; }
+.setup-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; }
+.setup-links a { display: inline-flex; align-items: center; gap: 4px; color: var(--focus); text-decoration: none; }
+.setup-links a:hover { text-decoration: underline; }
+
 /* ---------- inspector ---------- */
 .inspector { display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line); min-width: 0; animation: slide-in 320ms var(--ease-out); }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }

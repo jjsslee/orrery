@@ -13,7 +13,9 @@ export type CredentialProvider = ReturnType<typeof fromIni>;
 export function resolveCredentials(spec: CredentialSourceSpec): CredentialProvider {
   switch (spec.kind) {
     case 'profile':
-      return fromIni({ profile: spec.profile });
+      // ignoreCache: the SDK otherwise keeps the first read of ~/.aws for the life of the process,
+      // so a profile made with `aws configure` while Orrery runs would stay invisible.
+      return fromIni({ profile: spec.profile, ignoreCache: true });
     case 'environment':
       return fromEnv();
     case 'assume-role':
@@ -58,7 +60,7 @@ function detectMethod(config: Record<string, string> | undefined, creds: Record<
 }
 
 export async function listProfiles(): Promise<ProfileInfo[]> {
-  const { configFile, credentialsFile } = await loadSharedConfigFiles();
+  const { configFile, credentialsFile } = await loadSharedConfigFiles({ ignoreCache: true });
   const names = new Set<string>([...Object.keys(configFile), ...Object.keys(credentialsFile)]);
   const out: ProfileInfo[] = [];
   for (const name of names) {
@@ -77,7 +79,7 @@ export async function listProfiles(): Promise<ProfileInfo[]> {
 
 export async function defaultRegionFor(spec: CredentialSourceSpec): Promise<string> {
   if (spec.kind === 'profile') {
-    const { configFile } = await loadSharedConfigFiles();
+    const { configFile } = await loadSharedConfigFiles({ ignoreCache: true });
     const region = (configFile[spec.profile] as Record<string, string> | undefined)?.region;
     if (region) return region;
   }

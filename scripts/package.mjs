@@ -150,5 +150,12 @@ for (const t of targets) {
   else stripAuthenticode(exe);
   await postject.inject(exe, 'NODE_SEA_BLOB', blobData, { sentinelFuse: SEA_FUSE, ...(macos ? { machoSegmentName: 'NODE_SEA' } : {}) });
   if (macos) execFileSync('codesign', ['--sign', '-', exe]);
-  console.log(`  ${relative(root, exe)} (${(statSync(exe).size / 1024 / 1024).toFixed(0)}MB)`);
+  // Browsers, messengers and cloud drives drop the executable bit of a bare file, and Finder then
+  // opens it as a document. A zip made by ditto keeps the bit; the signature lives inside the binary,
+  // so extended attributes (which would add a stray ._ file) are left out.
+  const zip = `${exe.replace(/\.exe$/, '')}.zip`;
+  rmSync(zip, { force: true });
+  execFileSync('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noacl', exe, zip]);
+  const mb = (path) => `${(statSync(path).size / 1024 / 1024).toFixed(0)}MB`;
+  console.log(`  ${relative(root, exe)} (${mb(exe)}) → ${relative(root, zip)} (${mb(zip)})`);
 }
