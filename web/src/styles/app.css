@@ -391,3 +391,14 @@
 .tag-pill:hover { border-color: var(--line-strong); }
 .tag-pill-key { padding: 0 7px; background: var(--panel-3); color: var(--ink-3); display: inline-flex; align-items: center; }
 .tag-pill-val { padding: 0 8px; color: var(--ink); display: inline-flex; align-items: center; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- live mode ---------- */
+.live-toggle { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border-radius: var(--radius-s); border: 1px solid var(--line); color: var(--ink-3); font-weight: 500; white-space: nowrap; transition: color 120ms, border-color 120ms, background 120ms; }
+.live-toggle:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+.live-toggle:disabled { opacity: 0.5; cursor: default; }
+.live-toggle.on { color: var(--ink); border-color: color-mix(in srgb, var(--status-healthy) 45%, transparent); background: color-mix(in srgb, var(--status-healthy) 8%, transparent); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--status-healthy); animation: breathe-dot 1.8s var(--ease-in-out) infinite; }
+@keyframes breathe-dot { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-healthy) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+.live-when { color: var(--ink-3); font-size: 11.5px; }
+.rnode.changed { animation: changed-ring 1.6s var(--ease-out) 2; }
+@keyframes changed-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 70%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }

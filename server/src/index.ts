@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { EC2Client, DescribeRegionsCommand } from '@aws-sdk/client-ec2';
-import type { CollectEvent, MetricsBundle, ResourceGraph } from '@orrery/shared';
+import type { CollectEvent, MetricsBundle, ResourceGraph, StatusBundle } from '@orrery/shared';
 import { ClientFactory } from './aws/clients.ts';
 import { defaultRegionFor, describeSource, listProfiles, resolveCredentials, sourceFromQuery } from './aws/credentials.ts';
 import { collectorLabels, runCollectors } from './collectors/index.ts';
@@ -131,6 +131,51 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
     clearInterval(ping);
     raw.end();
   }
+});
+
+/** Collectors that carry runtime state; the live status pass re-runs only these (all free API calls). */
+const STATUS_COLLECTORS = ['ec2', 'elb', 'rds', 'ecs', 'alarms', 'network', 'elasticache'];
+const STATUS_PROPS = ['상태 검사', '희망/실행 작업', '실행 작업', '정상/전체', '현재 인스턴스', '배포 상태'];
+
+/**
+ * Status-only refresh: re-reads instance state, target health, ECS task counts,
+ * RDS status and alarms, merges them into the cached graph and returns the
+ * fresh status fields. Never touches CloudWatch metrics (the only metered call).
+ */
+app.get<{ Querystring: Record<string, string> }>('/api/status', async (req) => {
+  const s = await session(req.query);
+  const started = Date.now();
+  const graph = (await cache.get<ResourceGraph>(graphKey(s), GRAPH_TTL)) ?? (await collectGraph(s));
+  const { outputs, reports } = await runCollectors(
+    { region: s.region, account: s.account, clients: s.clients, log: (m) => app.log.warn(m) },
+    undefined,
+    STATUS_COLLECTORS,
+  );
+  const fresh = assembleGraph(outputs, reports, { account: s.account, region: s.region, source: s.source });
+  const bundle: StatusBundle = { collectedAt: fresh.collectedAt, checked: 0, nodes: {}, edges: {}, durationMs: 0, reports };
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  for (const n of fresh.nodes) {
+    const old = byId.get(n.id);
+    if (!old) continue;
+    bundle.checked++;
+    const props: Record<string, string | number | boolean | null> = {};
+    for (const k of STATUS_PROPS) if (k in n.props) props[k] = n.props[k];
+    bundle.nodes[n.id] = { status: n.status, statusLabel: n.statusLabel, alarms: n.alarms, props };
+    old.status = n.status;
+    old.statusLabel = n.statusLabel;
+    old.alarms = n.alarms;
+    Object.assign(old.props, props);
+  }
+  const oldEdges = new Map(graph.edges.map((e) => [e.id, e]));
+  for (const e of fresh.edges) {
+    const old = oldEdges.get(e.id);
+    if (!old || !e.status) continue;
+    bundle.edges[e.id] = e.status;
+    old.status = e.status;
+  }
+  await cache.set(graphKey(s), graph);
+  bundle.durationMs = Date.now() - started;
+  return bundle;
 });
 
 app.get<{ Querystring: Record<string, string> }>('/api/metrics', async (req) => {

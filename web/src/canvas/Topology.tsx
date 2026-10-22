@@ -36,6 +36,7 @@ function TopologyInner() {
   const selectedId = useStore((s) => s.selectedId);
   const hoverId = useStore((s) => s.hoverId);
   const fitRequest = useStore((s) => s.fitRequest);
+  const changed = useStore((s) => s.changed);
   const select = useStore((s) => s.select);
   const hover = useStore((s) => s.hover);
   const toggleExpanded = useStore((s) => s.toggleExpanded);
@@ -148,7 +149,7 @@ function TopologyInner() {
         const node: AggregateNodeType = { ...base, type: 'aggregate', width: n.width, height: n.height, style: { width: n.width, height: n.height }, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
         return node;
       }
-      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0 } };
+      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0, changed: Boolean(changed[n.id]) } };
       return node;
     });
     const hasMetrics = Boolean(metrics && Object.keys(metrics.traffic).length);
@@ -163,7 +164,7 @@ function TopologyInner() {
       };
     });
     return { nodes, edges };
-  }, [scene, placed, structureKey, selectedId, hoverId, metrics, overlays.traffic]);
+  }, [scene, placed, structureKey, selectedId, hoverId, metrics, overlays.traffic, changed]);
 
   const onNodeClick = useCallback<NodeMouseHandler<Node>>((_, node) => {
     if (node.type === 'aggregate') { toggleExpanded(node.id); return; }

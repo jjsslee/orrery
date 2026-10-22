@@ -181,6 +181,21 @@ export interface MetricsBundle {
   traffic: Record<string, number>;
 }
 
+/** Result of a status-only pass (free Describe/List calls, no CloudWatch metrics). */
+export interface StatusBundle {
+  collectedAt: string;
+  /** How many nodes the pass re-read */
+  checked: number;
+  /** Node id → fresh status fields (all re-read nodes, not only changed ones) */
+  nodes: Record<string, { status: Status; statusLabel?: string; alarms?: string[]; props?: Record<string, string | number | boolean | null> }>;
+  /** Edge id → fresh status (edges whose status is tracked, e.g. target health) */
+  edges: Record<string, Status>;
+  /** Wall time of the pass */
+  durationMs: number;
+  /** Per-collector timing of the pass (diagnostics) */
+  reports: CollectorReport[];
+}
+
 /** Credential source abstraction — only `profile` is implemented today. */
 export type CredentialSourceSpec =
   | { kind: 'profile'; profile: string }

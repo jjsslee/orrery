@@ -6,7 +6,7 @@ import { TypeIcon } from '../../components/TypeIcon';
 import { StatusDot } from '../../components/StatusDot';
 import { fmtProp } from '../../components/format';
 
-export type ResourceNodeData = { node: RNode; dim: boolean; traffic: number; depth: number; index: number; alarms: number };
+export type ResourceNodeData = { node: RNode; dim: boolean; traffic: number; depth: number; index: number; alarms: number; changed?: boolean };
 export type ResourceNodeType = Node<ResourceNodeData, 'resource'>;
 
 function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
@@ -15,7 +15,7 @@ function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
   const keyProp = meta.keyProp ? node.props[meta.keyProp] : undefined;
   return (
     <div
-      className={`rnode cat-${node.category} st-${node.status} ${dim ? 'dim' : ''} ${selected ? 'selected' : ''}`}
+      className={`rnode cat-${node.category} st-${node.status} ${dim ? 'dim' : ''} ${selected ? 'selected' : ''} ${data.changed ? 'changed' : ''}`}
       style={{ '--i': index } as React.CSSProperties}
       data-type={node.type}
     >

@@ -1,4 +1,4 @@
-import { Eye, Moon, RotateCw, Sun } from 'lucide-react';
+import { Eye, Moon, Radio, RotateCw, Sun } from 'lucide-react';
 import { useStore } from '../model/store';
 import { Dropdown } from '../components/Dropdown';
 import { BrandMark } from '../components/Brand';
@@ -16,7 +16,10 @@ export function TopBar() {
   const loading = useStore((s) => s.loading);
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
-  const { setProfile, setRegion, load, setView, setTheme } = useStore.getState();
+  const live = useStore((s) => s.live);
+  const liveBusy = useStore((s) => s.liveBusy);
+  const liveStatusAt = useStore((s) => s.liveStatusAt);
+  const { setProfile, setRegion, load, setView, setTheme, setLive } = useStore.getState();
 
   return (
     <header className="topbar">
@@ -51,7 +54,21 @@ export function TopBar() {
         <div className="identity" title={identity?.arn ?? ''}>
           {identity ? <span className="mono">{maskAccount(identity.account)}</span> : <span className="muted">계정 확인 중</span>}
         </div>
-        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} title="캐시를 무시하고 다시 수집합니다">
+        <button
+          type="button"
+          className={`live-toggle ${live ? 'on' : ''}`}
+          role="switch"
+          aria-checked={live}
+          onClick={() => setLive(!live)}
+          disabled={!graph}
+          title="무료 호출만 사용합니다: 상태는 2분, 구성은 10분마다 갱신하고 지표는 손으로 다시 수집할 때만 읽습니다. 탭이 보이지 않으면 멈춥니다."
+        >
+          <Radio size={13} className={liveBusy ? 'spin' : ''} />
+          <span>라이브</span>
+          {live && <span className="live-dot" aria-hidden />}
+          {live && liveStatusAt && <span className="live-when tnum">{fmtRelative(liveStatusAt)}</span>}
+        </button>
+        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} title="캐시를 무시하고 다시 수집합니다 (지표도 새로 읽습니다)">
           <RotateCw size={14} className={loading.active ? 'spin' : ''} />
           <span>{graph ? `다시 수집 · ${fmtRelative(graph.collectedAt)}` : '수집'}</span>
         </button>

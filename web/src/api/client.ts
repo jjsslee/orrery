@@ -1,4 +1,4 @@
-import type { CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph } from '@orrery/shared';
+import type { CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle } from '@orrery/shared';
 
 const q = (params: Record<string, string | undefined>) =>
   new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]))).toString();
@@ -20,6 +20,7 @@ export const api = {
   graph: (profile: string, region: string, refresh?: boolean) => json<ResourceGraph>(`/api/graph?${q({ profile, region, refresh: refresh ? '1' : undefined })}`),
   metrics: (profile: string, region: string, refresh?: boolean) => json<MetricsBundle>(`/api/metrics?${q({ profile, region, refresh: refresh ? '1' : undefined })}`),
   collectors: () => json<Record<string, string>>('/api/collectors'),
+  status: (profile: string, region: string) => json<StatusBundle>(`/api/status?${q({ profile, region })}`),
 
   /** Streams collection progress; resolves with the graph. */
   streamGraph(profile: string, region: string, refresh: boolean, onEvent: (e: CollectEvent) => void, signal?: AbortSignal): Promise<ResourceGraph> {

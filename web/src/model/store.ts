@@ -25,7 +25,7 @@ export interface LoadingState {
   startedAt?: number;
 }
 
-interface Persisted { profile?: string; region?: string; theme?: 'dark' | 'light' }
+interface Persisted { profile?: string; region?: string; theme?: 'dark' | 'light'; live?: boolean }
 
 const PERSIST_KEY = 'orrery.prefs';
 const loadPrefs = (): Persisted => { try { return JSON.parse(localStorage.getItem(PERSIST_KEY) ?? '{}') as Persisted; } catch { return {}; } };
@@ -56,6 +56,13 @@ export interface AppState {
   /** Monotonic counter: bump to ask the canvas to fit the view */
   fitRequest: number;
   railTab: 'types' | 'tags';
+  /** Live mode: periodic status passes (free calls) and silent full re-collects; metrics stay manual */
+  live: boolean;
+  liveStatusAt?: number;
+  liveGraphAt?: number;
+  liveBusy: boolean;
+  /** Node ids whose status changed in the last status pass (for the highlight animation) */
+  changed: Record<string, number>;
   /** Active tag filters; a resource must satisfy all of them */
   tagFilters: TagFilter[];
   /** Also show resources one hop away from a tagged resource */
@@ -64,7 +71,9 @@ export interface AppState {
   bootstrap(): Promise<void>;
   setProfile(profile: string): Promise<void>;
   setRegion(region: string): Promise<void>;
-  load(refresh?: boolean): Promise<void>;
+  load(refresh?: boolean, opts?: { silent?: boolean }): Promise<void>;
+  setLive(v: boolean): void;
+  refreshStatus(): Promise<void>;
   loadMetrics(refresh?: boolean): Promise<void>;
   setView(v: ViewMode): void;
   select(id?: string, opts?: { reveal?: boolean }): void;
@@ -109,6 +118,9 @@ export const useStore = create<AppState>((set, get) => ({
   expanded: new Set(),
   fitRequest: 0,
   railTab: 'types',
+  live: loadPrefs().live ?? false,
+  liveBusy: false,
+  changed: {},
   tagFilters: [],
   tagNeighbors: false,
 
@@ -139,23 +151,64 @@ export const useStore = create<AppState>((set, get) => ({
     await get().load(false);
   },
 
-  async load(refresh = false) {
-    abort?.abort();
-    abort = new AbortController();
+  async load(refresh = false, opts = {}) {
+    const silent = Boolean(opts.silent && get().graph);
+    if (!silent) { abort?.abort(); abort = new AbortController(); }
     const { profile, region, collectorLabels } = get();
     const order = Object.keys(collectorLabels);
-    set({ loading: { active: true, reports: {}, order, startedAt: Date.now() }, metrics: undefined });
+    if (!silent) set({ loading: { active: true, reports: {}, order, startedAt: Date.now() }, metrics: undefined });
+    else set({ liveBusy: true });
     try {
       const graph = await api.streamGraph(profile, region, refresh, (e) => {
+        if (silent) return;
         if (e.type === 'start') set((s) => ({ identity: { account: e.account, arn: s.identity?.arn ?? '' }, loading: { ...s.loading, order: e.collectors.length ? e.collectors : s.loading.order } }));
         if (e.type === 'collector') set((s) => ({ loading: { ...s.loading, reports: { ...s.loading.reports, [e.report.collector]: e.report } } }));
-      }, abort.signal);
-      set({ graph, loading: { active: false, reports: {}, order }, fitRequest: get().fitRequest + 1 });
+      }, silent ? undefined : abort?.signal);
+      if (get().profile !== profile || get().region !== region) return;
+      if (silent) {
+        // Keep the existing layout calm: only swap the data, mark what changed, no refit, no metrics (metered).
+        const prev = new Map(get().graph?.nodes.map((n) => [n.id, n]));
+        const now = Date.now();
+        const changed: Record<string, number> = {};
+        for (const n of graph.nodes) { const o = prev.get(n.id); if (o && (o.status !== n.status || o.statusLabel !== n.statusLabel)) changed[n.id] = now; }
+        set({ graph, liveGraphAt: now, liveBusy: false, changed });
+        return;
+      }
+      set({ graph, loading: { active: false, reports: {}, order }, fitRequest: get().fitRequest + 1, changed: {} });
       void api.identity(profile, region).then((id) => set({ identity: { account: id.account, arn: id.arn } })).catch(() => {});
       void get().loadMetrics(refresh);
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
+      if (silent) { console.warn('live re-collect failed', err); set({ liveBusy: false }); return; }
       set((s) => ({ loading: { ...s.loading, active: false, error: (err as Error).message } }));
+    }
+  },
+
+  setLive: (live) => { savePrefs({ live }); set({ live }); },
+
+  /** Status-only pass: merges fresh status fields into the current graph without re-layout. */
+  async refreshStatus() {
+    const { profile, region, graph } = get();
+    if (!graph || get().liveBusy) return;
+    set({ liveBusy: true });
+    try {
+      const bundle = await api.status(profile, region);
+      const current = get().graph;
+      if (!current || get().profile !== profile || get().region !== region) return;
+      const now = Date.now();
+      const changed: Record<string, number> = {};
+      const nodes = current.nodes.map((n) => {
+        const f = bundle.nodes[n.id];
+        if (!f) return n;
+        if (f.status !== n.status || f.statusLabel !== n.statusLabel || (f.alarms?.length ?? 0) !== (n.alarms?.length ?? 0)) changed[n.id] = now;
+        return { ...n, status: f.status, statusLabel: f.statusLabel, alarms: f.alarms, props: { ...n.props, ...f.props } };
+      });
+      const edges = current.edges.map((e) => (bundle.edges[e.id] && bundle.edges[e.id] !== e.status ? { ...e, status: bundle.edges[e.id] } : e));
+      set({ graph: { ...current, nodes, edges }, liveStatusAt: now, changed: Object.keys(changed).length ? changed : get().changed });
+    } catch (err) {
+      console.warn('status refresh failed', err);
+    } finally {
+      set({ liveBusy: false });
     }
   },
 
