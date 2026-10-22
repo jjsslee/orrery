@@ -1,4 +1,4 @@
-import { Eye, Moon, Radio, RotateCw, Sun } from 'lucide-react';
+import { Eye, Moon, Power, Radio, RotateCw, Sun } from 'lucide-react';
 import { useStore } from '../model/store';
 import { Dropdown } from '../components/Dropdown';
 import { BrandMark } from '../components/Brand';
@@ -19,7 +19,8 @@ export function TopBar() {
   const live = useStore((s) => s.live);
   const liveBusy = useStore((s) => s.liveBusy);
   const liveStatusAt = useStore((s) => s.liveStatusAt);
-  const { setProfile, setRegion, load, setView, setTheme, setLive } = useStore.getState();
+  const packaged = useStore((s) => s.packaged);
+  const { setProfile, setRegion, load, setView, setTheme, setLive, quitApp } = useStore.getState();
 
   return (
     <header className="topbar">
@@ -80,6 +81,11 @@ export function TopBar() {
         <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? '라이트 테마로' : '다크 테마로'}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
+        {packaged && (
+          <button type="button" className="icon-btn" onClick={() => void quitApp()} aria-label="Orrery 종료" title="Orrery 종료: 이 PC에서 돌고 있는 Orrery 서버를 끕니다">
+            <Power size={15} />
+          </button>
+        )}
       </div>
     </header>
   );

@@ -39,6 +39,10 @@ export interface AppState {
   profileChosen: boolean;
   /** 'needed' when this PC has no AWS profiles yet: the stage shows the setup guide instead of collecting */
   setup: 'checking' | 'needed' | 'done';
+  /** Served by the packaged executable / Orrery.app, which can be quit from the page */
+  packaged: boolean;
+  /** The packaged server was quit from this page */
+  closed: boolean;
   collectorLabels: Record<string, string>;
   profile: string;
   region: string;
@@ -81,6 +85,7 @@ export interface AppState {
   setRegion(region: string): Promise<void>;
   load(refresh?: boolean, opts?: { silent?: boolean }): Promise<void>;
   setLive(v: boolean): void;
+  quitApp(): Promise<void>;
   refreshStatus(): Promise<void>;
   loadMetrics(refresh?: boolean): Promise<void>;
   setView(v: ViewMode): void;
@@ -123,6 +128,8 @@ export const useStore = create<AppState>((set, get) => ({
   profiles: [],
   profileChosen: false,
   setup: 'checking',
+  packaged: false,
+  closed: false,
   collectorLabels: {},
   profile: loadPrefs().profile ?? '',
   region: loadPrefs().region ?? '',
@@ -146,7 +153,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   async bootstrap() {
     document.documentElement.dataset.theme = get().theme;
-    const [{ profiles, defaultProfile }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
+    const [{ profiles, defaultProfile, packaged }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
+    set({ packaged });
     // Nothing configured on this PC yet: guide the setup rather than try a profile that does not exist.
     if (!profiles.length) {
       set({ profiles, defaultProfile, collectorLabels, setup: 'needed' });
@@ -221,6 +229,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setLive: (live) => { savePrefs({ live }); set({ live }); },
+
+  async quitApp() {
+    abort?.abort();
+    await api.quit();
+    set({ closed: true, live: false });
+  },
 
   /** Status-only pass: merges fresh status fields into the current graph without re-layout. */
   async refreshStatus() {

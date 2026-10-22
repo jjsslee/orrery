@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
 import { rejectNonLocal } from './http/local-only.ts';
-import { embeddedWeb, openBrowser, orreryAt, packaged, portFree, userDataDir } from './runtime.ts';
+import { BUILD, detachServer, embeddedWeb, macApp, openBrowser, orreryAt, packaged, portFree, replaceOrrery, userDataDir } from './runtime.ts';
 import { readFileSync } from 'node:fs';
 
 /** Minimal .env loader (KEY=VALUE lines, # comments); never overrides variables already set. */
@@ -57,7 +57,11 @@ const GRAPH_TTL = Number(process.env.ORRERY_GRAPH_TTL_MS ?? 10 * 60_000);
 const METRICS_TTL = Number(process.env.ORRERY_METRICS_TTL_MS ?? 60_000);
 
 // Packaged, the log goes to the console window a person is looking at: warnings only.
-const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info') } });
+// Orrery.app has no console window, so it writes them to orrery.log in the data folder.
+if (macApp) mkdirSync(userDataDir(), { recursive: true });
+const app = Fastify({
+  logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info'), ...(macApp ? { file: join(userDataDir(), 'orrery.log') } : {}) },
+});
 app.addHook('onRequest', async (req, reply) => {
   const reason = rejectNonLocal(req.url, req.headers);
   if (reason) {
@@ -117,13 +121,21 @@ async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Pr
   return graph;
 }
 
-app.get('/api/health', async () => ({ ok: true, readOnly: true }));
+app.get('/api/health', async () => ({ ok: true, readOnly: true, build: BUILD }));
+
+// Packaged only: Orrery.app has no window to close, so the web app offers a quit button.
+if (packaged) {
+  app.post('/api/quit', async () => {
+    setTimeout(shutdown, 100);
+    return { ok: true };
+  });
+}
 
 app.get('/api/profiles', async () => {
   const profiles = await listProfiles();
   const wanted = process.env.ORRERY_DEFAULT_PROFILE ?? process.env.AWS_PROFILE;
   const defaultProfile = profiles.find((p) => p.name === wanted)?.name ?? profiles.find((p) => p.isDefault)?.name ?? profiles[0]?.name ?? 'default';
-  return { profiles, defaultProfile, env: Boolean(process.env.AWS_ACCESS_KEY_ID) };
+  return { profiles, defaultProfile, env: Boolean(process.env.AWS_ACCESS_KEY_ID), packaged };
 });
 
 app.get('/api/collectors', async () => collectorLabels());
@@ -269,17 +281,23 @@ function announce(url: string, message: string): void {
 
 /**
  * The packaged app keeps its usual port when it can (the browser remembers
- * profile and region per origin), reuses an Orrery already running there,
- * and otherwise takes any free port.
+ * profile and region per origin): it reuses the same build already running
+ * there, replaces a different packaged build (an update), and otherwise takes
+ * any free port.
  */
 async function start(): Promise<void> {
+  if (macApp && !process.env.ORRERY_DETACHED) {
+    detachServer();
+    process.exit(0);
+  }
   let port = PORT;
   if (packaged && !(await portFree(PORT))) {
-    if (await orreryAt(PORT)) {
+    const running = await orreryAt(PORT);
+    if (running === BUILD) {
       announce(`http://127.0.0.1:${PORT}`, '이미 실행 중인 Orrery를 엽니다');
       process.exit(0);
     }
-    port = 0;
+    if (!running || !(await replaceOrrery(PORT))) port = 0;
   }
   await app.listen({ port, host: '127.0.0.1' });
   if (packaged) {
@@ -294,12 +312,11 @@ start().catch((err: unknown) => {
   process.exit(1);
 });
 
-// Release the port promptly on restart (tsx watch sends SIGTERM); in-flight SSE
+// Release the port promptly on restart (tsx watch sends SIGTERM) or quit; in-flight SSE
 // streams would otherwise keep the old process alive and the new one fails with EADDRINUSE.
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, () => {
-    const hardExit = setTimeout(() => process.exit(0), 1500);
-    hardExit.unref();
-    void app.close().finally(() => process.exit(0));
-  });
+function shutdown(): void {
+  const hardExit = setTimeout(() => process.exit(0), 1500);
+  hardExit.unref();
+  void app.close().finally(() => process.exit(0));
 }
+for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, shutdown);

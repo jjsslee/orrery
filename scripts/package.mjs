@@ -10,6 +10,8 @@
  *    release/.node, SHA-256 checked against nodejs.org's SHASUMS256.txt),
  *    drop its signature, inject the blob with postject, and ad-hoc sign the
  *    macOS binaries (Apple Silicon refuses to run unsigned code).
+ * 4. Join the macOS binaries into one universal Orrery.app (Finder opens it
+ *    like any app, no Terminal) and zip it and the Windows exe for handing out.
  */
 import { build } from 'esbuild';
 import postject from 'postject';
@@ -28,7 +30,12 @@ const TARGETS = [
   { name: 'windows-x64', dist: 'win-x64', file: 'orrery-windows-x64.exe' },
 ];
 
+const BUNDLE_ID = 'io.github.jjsslee.orrery';
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+// Distinct per build so a newly opened Orrery replaces a different one still running in the background.
+const buildId = `${version}+${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}`;
 const out = join(root, 'release');
 const work = join(out, '.work');
 const runtimes = join(out, '.node', `v${NODE_VERSION}`);
@@ -105,6 +112,61 @@ function stripAuthenticode(file) {
   writeFileSync(file, offset + size === pe.length ? pe.subarray(0, offset) : pe);
 }
 
+const mb = (path) => `${(statSync(path).size / 1024 / 1024).toFixed(0)}MB`;
+
+/**
+ * Browsers, messengers and cloud drives drop the executable bit of a bare
+ * file, and Finder then opens it as a document; a zip made by ditto keeps it.
+ * Signatures live inside the binaries and the app's _CodeSignature, so
+ * extended attributes (a stray ._ file in the zip) are left out.
+ */
+function zip(source, dest) {
+  rmSync(dest, { force: true });
+  const keepParent = statSync(source).isDirectory() ? ['--keepParent'] : [];
+  execFileSync('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noacl', ...keepParent, source, dest]);
+  console.log(`  ${relative(root, dest)} (${mb(dest)})`);
+}
+
+function infoPlist() {
+  const entries = {
+    CFBundleName: 'Orrery',
+    CFBundleDisplayName: 'Orrery',
+    CFBundleIdentifier: BUNDLE_ID,
+    CFBundleExecutable: 'orrery',
+    CFBundleIconFile: 'Orrery',
+    CFBundlePackageType: 'APPL',
+    CFBundleShortVersionString: version,
+    CFBundleVersion: version,
+    // No Dock icon: Orrery is a background server whose window is the browser tab.
+    LSUIElement: true,
+  };
+  const value = (v) => (v === true ? '<true/>' : `<string>${v}</string>`);
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    ...Object.entries(entries).map(([k, v]) => `  <key>${k}</key>${value(v)}`),
+    '</dict>',
+    '</plist>',
+    '',
+  ].join('\n');
+}
+
+/** Orrery.icns from the 1024px render of scripts/icon/orrery-app.svg, with macOS's own sips and iconutil. */
+function appIcon(dest) {
+  const source = join(root, 'scripts', 'icon', 'orrery-app-1024.png');
+  const iconset = join(work, 'Orrery.iconset');
+  mkdirSync(iconset, { recursive: true });
+  for (const size of [16, 32, 128, 256, 512]) {
+    for (const scale of [1, 2]) {
+      const px = String(size * scale);
+      execFileSync('sips', ['-z', px, px, source, '--out', join(iconset, `icon_${size}x${size}${scale === 2 ? '@2x' : ''}.png`)], { stdio: 'ignore' });
+    }
+  }
+  execFileSync('iconutil', ['-c', 'icns', iconset, '-o', dest]);
+}
+
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 
@@ -118,7 +180,7 @@ await build({
   minify: true,
   outfile: join(work, 'server.cjs'),
   // The server derives repo paths from import.meta.url; CommonJS has __filename (the executable, under SEA).
-  define: { 'import.meta.url': '__orreryMetaUrl' },
+  define: { 'import.meta.url': '__orreryMetaUrl', __ORRERY_BUILD__: JSON.stringify(buildId) },
   banner: { js: 'var __orreryMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
   logLevel: 'warning',
 });
@@ -139,6 +201,7 @@ writeFileSync(seaConfig, JSON.stringify({
 execFileSync(await nodeRuntime(`darwin-${process.arch}`), ['--experimental-sea-config', seaConfig], { stdio: 'inherit' });
 const blobData = readFileSync(blob);
 
+const macBinaries = [];
 for (const t of targets) {
   console.log(t.name);
   const exe = join(out, t.file);
@@ -150,12 +213,25 @@ for (const t of targets) {
   else stripAuthenticode(exe);
   await postject.inject(exe, 'NODE_SEA_BLOB', blobData, { sentinelFuse: SEA_FUSE, ...(macos ? { machoSegmentName: 'NODE_SEA' } : {}) });
   if (macos) execFileSync('codesign', ['--sign', '-', exe]);
-  // Browsers, messengers and cloud drives drop the executable bit of a bare file, and Finder then
-  // opens it as a document. A zip made by ditto keeps the bit; the signature lives inside the binary,
-  // so extended attributes (which would add a stray ._ file) are left out.
-  const zip = `${exe.replace(/\.exe$/, '')}.zip`;
-  rmSync(zip, { force: true });
-  execFileSync('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noacl', exe, zip]);
-  const mb = (path) => `${(statSync(path).size / 1024 / 1024).toFixed(0)}MB`;
-  console.log(`  ${relative(root, exe)} (${mb(exe)}) → ${relative(root, zip)} (${mb(zip)})`);
+  console.log(`  ${relative(root, exe)} (${mb(exe)})`);
+  if (macos) macBinaries.push(exe);
+  else zip(exe, `${exe.replace(/\.exe$/, '')}.zip`);
+}
+
+if (macBinaries.length) {
+  console.log('Orrery.app');
+  const app = join(out, 'Orrery.app');
+  const contents = join(app, 'Contents');
+  rmSync(app, { recursive: true, force: true });
+  mkdirSync(join(contents, 'MacOS'), { recursive: true });
+  mkdirSync(join(contents, 'Resources'));
+  const main = join(contents, 'MacOS', 'orrery');
+  // One app for Apple Silicon and Intel Macs; each slice keeps its own injected blob.
+  if (macBinaries.length > 1) execFileSync('lipo', ['-create', ...macBinaries, '-output', main]);
+  else copyFileSync(macBinaries[0], main);
+  chmodSync(main, 0o755);
+  writeFileSync(join(contents, 'Info.plist'), infoPlist());
+  appIcon(join(contents, 'Resources', 'Orrery.icns'));
+  execFileSync('codesign', ['--force', '--sign', '-', app]);
+  zip(app, join(out, 'Orrery-macos.zip'));
 }

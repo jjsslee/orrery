@@ -14,7 +14,9 @@ async function json<T>(url: string): Promise<T> {
 }
 
 export const api = {
-  profiles: () => json<{ profiles: ProfileInfo[]; defaultProfile: string; env: boolean }>('/api/profiles'),
+  profiles: () => json<{ profiles: ProfileInfo[]; defaultProfile: string; env: boolean; packaged: boolean }>('/api/profiles'),
+  /** Packaged builds only: stops the local server. */
+  quit: async () => { if (!(await fetch('/api/quit', { method: 'POST' })).ok) throw new Error('종료하지 못했습니다'); },
   regions: (profile: string) => json<{ regions: string[] }>(`/api/regions?${q({ profile })}`),
   identity: (profile: string, region: string) => json<{ account: string; arn: string; region: string; source: string }>(`/api/identity?${q({ profile, region })}`),
   graph: (profile: string, region: string, refresh?: boolean) => json<ResourceGraph>(`/api/graph?${q({ profile, region, refresh: refresh ? '1' : undefined })}`),
