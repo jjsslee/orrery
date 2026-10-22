@@ -32,7 +32,6 @@ function TopologyInner() {
   const query = useStore((s) => s.query);
   const tagFilters = useStore((s) => s.tagFilters);
   const tagNeighbors = useStore((s) => s.tagNeighbors);
-  const solo = useStore((s) => s.solo);
   const expanded = useStore((s) => s.expanded);
   const selectedId = useStore((s) => s.selectedId);
   const hoverId = useStore((s) => s.hoverId);
@@ -42,13 +41,21 @@ function TopologyInner() {
   const toggleExpanded = useStore((s) => s.toggleExpanded);
   const rf = useReactFlow();
 
+  // Narrow mode: the user has checked only a few resource types. Those are never folded into
+  // aggregates and plates that end up empty are dropped, so "show me the load balancers" reads as such.
+  const narrow = useMemo(() => {
+    if (!graph || hiddenTypes.size === 0) return undefined;
+    const present = new Set(graph.nodes.map((n) => n.type));
+    const visible = (Object.keys(TYPE_META) as ResourceType[]).filter((t) => present.has(t) && !hiddenTypes.has(t) && !TYPE_META[t].plate && !TYPE_META[t].overlay);
+    return visible.length > 0 && visible.length <= 3 ? new Set(visible) : undefined;
+  }, [graph, hiddenTypes]);
+
   const scene: Scene | undefined = useMemo(
     () => (graph ? buildScene({
       graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic,
-      pruneEmptyPlates: Boolean(solo && solo !== 'vpc' && solo !== 'subnet'),
-      noFoldTypes: solo ? new Set((Object.keys(TYPE_META) as ResourceType[]).filter((t) => (solo.startsWith('cat:') ? TYPE_META[t].category === solo.slice(4) : t === solo))) : undefined,
+      pruneEmptyPlates: Boolean(narrow), noFoldTypes: narrow,
     }) : undefined),
-    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic, solo],
+    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic, narrow],
   );
 
   // Re-layout only when the structure changes, not on dim/traffic updates.

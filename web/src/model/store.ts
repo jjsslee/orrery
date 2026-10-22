@@ -56,8 +56,6 @@ export interface AppState {
   /** Monotonic counter: bump to ask the canvas to fit the view */
   fitRequest: number;
   railTab: 'types' | 'tags';
-  /** "Only this" isolation: a resource type or `cat:<category>`; undefined when not isolating */
-  solo?: string;
   /** Active tag filters; a resource must satisfy all of them */
   tagFilters: TagFilter[];
   /** Also show resources one hop away from a tagged resource */
@@ -79,9 +77,10 @@ export interface AppState {
   setTheme(t: 'dark' | 'light'): void;
   requestFit(): void;
   setRailTab(t: 'types' | 'tags'): void;
-  /** Show only this type (plus VPC/subnet plates for context); call again to clear */
-  soloType(t: ResourceType): void;
-  soloCategory(c: Category): void;
+  /** Check or uncheck every type at once */
+  setAllTypes(visible: boolean): void;
+  /** Check only this type (VPC/subnet plates stay for context) */
+  onlyType(t: ResourceType): void;
   resetFilters(): void;
   addTagFilter(f: TagFilter): void;
   removeTagFilter(f: TagFilter): void;
@@ -184,19 +183,19 @@ export const useStore = create<AppState>((set, get) => ({
   },
   hover: (hoverId) => set({ hoverId }),
   setQuery: (query) => set({ query }),
-  toggleCategory: (c) => set((s) => ({ categories: { ...s.categories, [c]: !s.categories[c] }, solo: undefined })),
-  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { hiddenTypes: next, solo: undefined }; }),
-  soloType: (t) => set((s) => {
-    if (s.solo === t) return { hiddenTypes: new Set(), categories: ALL_ON, solo: undefined };
-    const keep = new Set<ResourceType>([t, 'vpc', 'subnet']);
-    return { hiddenTypes: new Set(ALL_TYPES.filter((x) => !keep.has(x))), categories: ALL_ON, solo: t };
+  // A category checkbox is the union of its types: any visible → hide all, none visible → show all.
+  toggleCategory: (c) => set((s) => {
+    const types = ALL_TYPES.filter((t) => TYPE_META[t].category === c);
+    const anyVisible = types.some((t) => !s.hiddenTypes.has(t));
+    const next = new Set(s.hiddenTypes);
+    for (const t of types) anyVisible ? next.add(t) : next.delete(t);
+    return { hiddenTypes: next, categories: ALL_ON };
   }),
-  soloCategory: (c) => set((s) => {
-    const key = `cat:${c}`;
-    if (s.solo === key) return { hiddenTypes: new Set(), categories: ALL_ON, solo: undefined };
-    return { hiddenTypes: new Set(ALL_TYPES.filter((x) => TYPE_META[x].category !== c && x !== 'vpc' && x !== 'subnet')), categories: ALL_ON, solo: key };
-  }),
-  resetFilters: () => set({ hiddenTypes: new Set(), categories: ALL_ON, solo: undefined, query: '', tagFilters: [] }),
+  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { hiddenTypes: next, categories: ALL_ON }; }),
+  // Unchecking everything keeps the VPC/subnet plates so whatever gets checked next still has its place.
+  setAllTypes: (visible) => set({ hiddenTypes: visible ? new Set() : new Set(ALL_TYPES.filter((t) => t !== 'vpc' && t !== 'subnet')), categories: ALL_ON }),
+  onlyType: (t) => set({ hiddenTypes: new Set(ALL_TYPES.filter((x) => x !== t && x !== 'vpc' && x !== 'subnet')), categories: ALL_ON }),
+  resetFilters: () => set({ hiddenTypes: new Set(), categories: ALL_ON, query: '', tagFilters: [] }),
   setOverlay: (k, v) => set((s) => ({ overlays: { ...s.overlays, [k]: v } })),
   toggleExpanded: (id) => set((s) => { const next = new Set(s.expanded); next.has(id) ? next.delete(id) : next.add(id); return { expanded: next }; }),
   setTheme: (theme) => { document.documentElement.dataset.theme = theme; savePrefs({ theme }); set({ theme }); },

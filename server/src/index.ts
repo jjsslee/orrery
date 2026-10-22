@@ -162,3 +162,13 @@ if (existsSync(dist)) {
 }
 
 await app.listen({ port: PORT, host: '127.0.0.1' });
+
+// Release the port promptly on restart (tsx watch sends SIGTERM); in-flight SSE
+// streams would otherwise keep the old process alive and the new one fails with EADDRINUSE.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    const hardExit = setTimeout(() => process.exit(0), 1500);
+    hardExit.unref();
+    void app.close().finally(() => process.exit(0));
+  });
+}
