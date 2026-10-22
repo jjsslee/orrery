@@ -2,16 +2,24 @@
  * ECR repositories. Image URIs referenced by Lambda/ECS/CodeBuild are matched
  * by the assembler on repository name.
  */
-import { ECRClient, paginateDescribeRepositories } from '@aws-sdk/client-ecr';
+import { ECRClient, ListTagsForResourceCommand, paginateDescribeRepositories } from '@aws-sdk/client-ecr';
 import type { ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { iso, nid } from './ids.ts';
-import { collect } from './util.ts';
+import { iso, nid, tagsToRecord } from './ids.ts';
+import { attempt, collect } from './util.ts';
 
 async function run(ctx: CollectorContext) {
   const ecr = ctx.clients.get(ECRClient);
   const nodes: ResourceNode[] = [];
   const repos = await collect(paginateDescribeRepositories({ client: ecr }, {}), (p) => p.repositories);
+  const tagsByArn = new Map<string, Record<string, string> | undefined>();
+  await Promise.all(
+    repos.map(async (r) => {
+      if (!r.repositoryArn) return;
+      const res = await attempt(ctx, `ecr tags ${r.repositoryName}`, () => ecr.send(new ListTagsForResourceCommand({ resourceArn: r.repositoryArn })));
+      tagsByArn.set(r.repositoryArn, tagsToRecord(res?.tags));
+    }),
+  );
   for (const r of repos) {
     if (!r.repositoryName) continue;
     nodes.push({
@@ -30,6 +38,7 @@ async function run(ctx: CollectorContext) {
         '스캔 설정': r.imageScanningConfiguration?.scanOnPush ? '푸시 시 스캔' : '수동',
         암호화: r.encryptionConfiguration?.encryptionType ?? null,
       },
+      tags: r.repositoryArn ? tagsByArn.get(r.repositoryArn) : undefined,
       refs: r.encryptionConfiguration?.kmsKey ? [r.encryptionConfiguration.kmsKey] : undefined,
     });
   }

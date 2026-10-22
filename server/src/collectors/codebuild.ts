@@ -15,13 +15,23 @@ async function run(ctx: CollectorContext) {
   const edges: ResourceEdge[] = [];
 
   const names = await collect(paginateListProjects({ client: cb }, {}), (p) => p.projects);
-  // CodeBuild has no GetProject: details come from BatchGetProjects, which the read-only
-  // guard currently rejects (Batch* prefix). Fall back to name-only nodes in that case.
+  // CodeBuild has no GetProject: details (and tags) come from BatchGetProjects. An explicit
+  // deny on one project fails the whole batch, so retry those one by one; projects that
+  // still cannot be read become name-only nodes.
   const detailed = new Map<string, Project>();
   await Promise.all(
     chunk(names, 100).map(async (batch) => {
       const res = await attempt(ctx, 'codebuild BatchGetProjects', () => cb.send(new BatchGetProjectsCommand({ names: batch })));
-      for (const p of res?.projects ?? []) if (p.name) detailed.set(p.name, p);
+      if (res) {
+        for (const p of res.projects ?? []) if (p.name) detailed.set(p.name, p);
+        return;
+      }
+      await Promise.all(
+        batch.map(async (name) => {
+          const one = await attempt(ctx, `codebuild project ${name}`, () => cb.send(new BatchGetProjectsCommand({ names: [name] })));
+          for (const p of one?.projects ?? []) if (p.name) detailed.set(p.name, p);
+        }),
+      );
     }),
   );
   for (const name of names) {

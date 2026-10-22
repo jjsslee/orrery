@@ -196,6 +196,7 @@ export interface ProfileInfo {
 
 /** SSE progress event emitted while collecting */
 export type CollectEvent =
+  | { type: 'ping' }
   | { type: 'start'; collectors: string[]; account: string; region: string }
   | { type: 'collector'; report: CollectorReport }
   | { type: 'done'; graph: ResourceGraph }

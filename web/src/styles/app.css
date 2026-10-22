@@ -344,3 +344,42 @@
   .topbar { gap: 10px; padding: 0 12px; }
   .topbar-center { display: none; }
 }
+
+/* ---------- tags ---------- */
+.rail-tabs { display: inline-flex; padding: 3px; background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; align-self: flex-start; }
+.rail-tabs .seg { height: 24px; padding: 0 12px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.seg-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--pulse); color: #1a1200; font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.tagpanel { display: flex; flex-direction: column; gap: 10px; }
+.tag-active { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: var(--radius-m); background: var(--panel-2); border: 1px solid var(--line); }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chips.compact { margin-top: -4px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--pulse) 16%, transparent); border: 1px solid color-mix(in srgb, var(--pulse) 45%, transparent); color: var(--ink); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip:hover { background: color-mix(in srgb, var(--pulse) 26%, transparent); }
+.tag-hint { color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
+.tag-opt { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+.tag-opt input { accent-color: var(--pulse); margin: 0; }
+.search.small { height: 30px; }
+.tag-summary { color: var(--ink-3); font-size: 12px; }
+.tag-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.tag-key-row { display: flex; align-items: center; gap: 4px; }
+.tag-key-toggle { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; height: 30px; padding: 0 6px; border-radius: 6px; color: var(--ink); text-align: left; }
+.tag-key-toggle:hover { background: var(--panel-2); }
+.tag-chev { color: var(--ink-4); transition: transform 160ms var(--ease-out); flex: none; }
+.tag-key.open .tag-chev { transform: rotate(90deg); }
+.tag-key-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.tag-all { height: 22px; padding: 0 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--ink-3); font-size: 11px; flex: none; }
+.tag-all:hover { color: var(--ink); border-color: var(--line-strong); }
+.tag-all.on { background: color-mix(in srgb, var(--pulse) 18%, transparent); border-color: color-mix(in srgb, var(--pulse) 50%, transparent); color: var(--ink); }
+.tag-values { list-style: none; margin: 2px 0 6px; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 1px; }
+.tag-value { display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 8px; border-radius: 6px; color: var(--ink-2); text-align: left; }
+.tag-value:hover { background: var(--panel-2); color: var(--ink); }
+.tag-value.on { background: color-mix(in srgb, var(--pulse) 14%, transparent); color: var(--ink); box-shadow: inset 2px 0 0 var(--pulse); }
+.tag-value-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.tag-more { padding: 4px 8px; color: var(--ink-3); font-size: 12px; }
+.tag-more:hover { color: var(--ink); }
+.tag-system { align-self: flex-start; margin-top: 4px; }
+.tag-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-pill { display: inline-flex; align-items: stretch; max-width: 100%; height: 24px; border-radius: 6px; border: 1px solid var(--line); overflow: hidden; font-size: 12px; }
+.tag-pill:hover { border-color: var(--line-strong); }
+.tag-pill-key { padding: 0 7px; background: var(--panel-3); color: var(--ink-3); display: inline-flex; align-items: center; }
+.tag-pill-val { padding: 0 8px; color: var(--ink); display: inline-flex; align-items: center; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

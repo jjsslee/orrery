@@ -7,6 +7,7 @@ import { TypeIcon } from '../components/TypeIcon';
 import { StatusDot } from '../components/StatusDot';
 import { fmtNumber, fmtProp, fmtRelative } from '../components/format';
 import { ChevronDown } from 'lucide-react';
+import { matchesTags } from '../model/tags';
 
 const PAGE = 24;
 
@@ -23,6 +24,7 @@ export function TypeView() {
   const query = useStore((s) => s.query);
   const categories = useStore((s) => s.categories);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
+  const tagFilters = useStore((s) => s.tagFilters);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
   const [pages, setPages] = useState<Record<string, number>>({});
@@ -39,6 +41,7 @@ export function TypeView() {
     const byType = new Map<ResourceType, ResourceNode[]>();
     for (const n of graph?.nodes ?? []) {
       if (!categories[n.category] || hiddenTypes.has(n.type)) continue;
+      if (!matchesTags(n, tagFilters)) continue;
       if (q && !(n.name.toLowerCase().includes(q) || n.nativeId.toLowerCase().includes(q) || Object.values(n.props).some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))) continue;
       byType.set(n.type, [...(byType.get(n.type) ?? []), n]);
     }
@@ -51,7 +54,7 @@ export function TypeView() {
       });
     }
     return byType;
-  }, [graph, categories, hiddenTypes, q, sortBy, metrics]);
+  }, [graph, categories, hiddenTypes, tagFilters, q, sortBy, metrics]);
 
   if (!graph) return null;
   const total = [...groups.values()].reduce((a, l) => a + l.length, 0);
@@ -133,7 +136,7 @@ export function TypeView() {
           </section>
         );
       })}
-      {total === 0 && <div className="tv-empty">조건에 맞는 자원이 없습니다. 검색어나 필터를 조정하세요.</div>}
+      {total === 0 && <div className="tv-empty">조건에 맞는 자원이 없습니다. 검색어, 태그, 필터를 조정하세요.</div>}
     </div>
   );
 }

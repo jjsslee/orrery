@@ -1,11 +1,13 @@
 /**
  * S3 buckets in the selected region. ListBuckets is filtered server-side by
  * BucketRegion; buckets the API reports without a region fall back to
- * GetBucketLocation. Versioning and public-access-block are best effort.
+ * GetBucketLocation. Versioning, public-access-block and tagging are best
+ * effort (GetBucketTagging answers NoSuchTagSet for untagged buckets).
  */
 import {
   S3Client,
   GetBucketLocationCommand,
+  GetBucketTaggingCommand,
   GetBucketVersioningCommand,
   GetPublicAccessBlockCommand,
   paginateListBuckets,
@@ -13,7 +15,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { iso, nid } from './ids.ts';
+import { iso, nid, tagsToRecord } from './ids.ts';
 import { attempt, collect, errMsg } from './util.ts';
 
 /** LocationConstraint → region name ('' / null → us-east-1, 'EU' → eu-west-1) */
@@ -56,13 +58,21 @@ async function run(ctx: CollectorContext) {
       }
       if (region !== ctx.region) return;
 
-      const [versioning, pab] = await Promise.all([
+      const [versioning, pab, tags] = await Promise.all([
         attempt(ctx, `s3 versioning ${name}`, () => s3.send(new GetBucketVersioningCommand({ Bucket: name }))),
         ctx.limit(() => s3.send(new GetPublicAccessBlockCommand({ Bucket: name }))).then(
           (r) => r.PublicAccessBlockConfiguration,
           (err: unknown) => {
             const code = err instanceof Error ? err.name : '';
             if (code !== 'NoSuchPublicAccessBlockConfiguration') ctx.log(`[s3 public access block ${name}] ${errMsg(err)}`);
+            return undefined;
+          },
+        ),
+        ctx.limit(() => s3.send(new GetBucketTaggingCommand({ Bucket: name }))).then(
+          (r) => tagsToRecord(r.TagSet),
+          (err: unknown) => {
+            const code = err instanceof Error ? err.name : '';
+            if (code !== 'NoSuchTagSet') ctx.log(`[s3 tags ${name}] ${errMsg(err)}`);
             return undefined;
           },
         ),
@@ -84,6 +94,7 @@ async function run(ctx: CollectorContext) {
           '퍼블릭 액세스 차단': blocked,
           _hosts: s3Hosts(name, region),
         },
+        tags,
       });
     }),
   );

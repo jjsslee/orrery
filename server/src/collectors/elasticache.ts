@@ -5,6 +5,7 @@
  */
 import {
   ElastiCacheClient,
+  ListTagsForResourceCommand,
   paginateDescribeCacheClusters,
   paginateDescribeCacheSubnetGroups,
   paginateDescribeReplicationGroups,
@@ -13,8 +14,8 @@ import {
 } from '@aws-sdk/client-elasticache';
 import type { ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { edge, iso, nid, statusFromState } from './ids.ts';
-import { collect, errMsg } from './util.ts';
+import { arnName, edge, iso, nid, statusFromState, tagsToRecord } from './ids.ts';
+import { attempt, collect, errMsg } from './util.ts';
 
 function placement(azs: string[], group?: CacheSubnetGroup): { parentId?: string; az?: string } {
   const unique = [...new Set(azs.filter(Boolean))];
@@ -39,6 +40,14 @@ async function run(ctx: CollectorContext) {
     }),
   ]);
   const subnetGroupByName = new Map(subnetGroups.map((g) => [g.CacheSubnetGroupName ?? '', g]));
+  const tagsByArn = new Map<string, Record<string, string> | undefined>();
+  const taggable = [...groups.map((g) => g.ARN), ...clusters.filter((c) => !c.ReplicationGroupId).map((c) => c.ARN)].filter((a): a is string => Boolean(a));
+  await Promise.all(
+    taggable.map(async (arn) => {
+      const res = await attempt(ctx, `elasticache tags ${arnName(arn)}`, () => ec.send(new ListTagsForResourceCommand({ ResourceName: arn })));
+      tagsByArn.set(arn, tagsToRecord(res?.TagList));
+    }),
+  );
   const clustersByGroup = new Map<string, CacheCluster[]>();
   for (const c of clusters) {
     if (!c.ReplicationGroupId) continue;
@@ -84,6 +93,7 @@ async function run(ctx: CollectorContext) {
         설명: g.Description ?? null,
         _cacheClusterId: g.MemberClusters?.[0] ?? first?.CacheClusterId ?? null,
       },
+      tags: g.ARN ? tagsByArn.get(g.ARN) : undefined,
       refs: g.KmsKeyId ? [g.KmsKeyId] : undefined,
     });
     const sgs = new Set((first?.SecurityGroups ?? []).map((s) => s.SecurityGroupId).filter((s): s is string => Boolean(s)));
@@ -119,6 +129,7 @@ async function run(ctx: CollectorContext) {
         생성: iso(c.CacheClusterCreateTime),
         _cacheClusterId: id,
       },
+      tags: c.ARN ? tagsByArn.get(c.ARN) : undefined,
     });
     for (const sg of c.SecurityGroups ?? []) {
       if (sg.SecurityGroupId) edges.push(edge('attached', nid('elasticache', id), nid('security-group', sg.SecurityGroupId)));

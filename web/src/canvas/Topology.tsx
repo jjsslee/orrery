@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Background, BackgroundVariant, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, useNodesInitialized, MarkerType, Position,
+  Background, BackgroundVariant, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, MarkerType, Position,
   type Node, type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -29,6 +29,8 @@ function TopologyInner() {
   const categories = useStore((s) => s.categories);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
   const query = useStore((s) => s.query);
+  const tagFilters = useStore((s) => s.tagFilters);
+  const tagNeighbors = useStore((s) => s.tagNeighbors);
   const expanded = useStore((s) => s.expanded);
   const selectedId = useStore((s) => s.selectedId);
   const hoverId = useStore((s) => s.hoverId);
@@ -39,8 +41,8 @@ function TopologyInner() {
   const rf = useReactFlow();
 
   const scene: Scene | undefined = useMemo(
-    () => (graph ? buildScene({ graph, overlays, categories, hiddenTypes, query, expanded, selectedId, traffic: metrics?.traffic }) : undefined),
-    [graph, overlays, categories, hiddenTypes, query, expanded, selectedId, metrics?.traffic],
+    () => (graph ? buildScene({ graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic }) : undefined),
+    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic],
   );
 
   // Re-layout only when the structure changes, not on dim/traffic updates.
@@ -51,7 +53,7 @@ function TopologyInner() {
   const firstFit = useRef(true);
   // Filters and search change what is on the map: fit the view once the new layout lands.
   const fitAfterLayout = useRef(false);
-  useEffect(() => { fitAfterLayout.current = true; }, [query, categories, hiddenTypes, overlays.security, overlays.iam, overlays.encryption, overlays.targetGroups, overlays.isolated]);
+  useEffect(() => { fitAfterLayout.current = true; }, [query, tagFilters, tagNeighbors, categories, hiddenTypes, overlays.security, overlays.iam, overlays.encryption, overlays.targetGroups, overlays.isolated]);
 
   useEffect(() => {
     if (!scene || !structureKey) return;
@@ -74,15 +76,19 @@ function TopologyInner() {
       .catch((err) => { console.error('layout failed', err); setLaying(false); });
   }, [scene, structureKey, placed?.key, rf]);
 
-  // Fit only once React Flow has measured the freshly placed nodes; earlier calls fit an empty or partial set.
+  // Nodes carry explicit width/height, so React Flow can fit them before they are measured
+  // (with onlyRenderVisibleElements, off-screen nodes are never measured at all).
   const pendingFit = useRef<{ first: boolean } | null>(null);
-  const initialized = useNodesInitialized();
   useEffect(() => {
-    if (!initialized || !pendingFit.current || !placed) return;
-    const { first } = pendingFit.current;
-    pendingFit.current = null;
-    void rf.fitView({ padding: first ? 0.08 : 0.2, duration: first ? 600 : 400, maxZoom: 1.2 });
-  }, [initialized, placed, rf]);
+    if (!pendingFit.current || !placed) return;
+    const t = setTimeout(() => {
+      const pending = pendingFit.current;
+      if (!pending) return;
+      pendingFit.current = null;
+      void rf.fitView({ padding: pending.first ? 0.08 : 0.2, duration: pending.first ? 600 : 400, maxZoom: 1.2 });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [placed, rf]);
 
   useEffect(() => {
     if (!graph) { firstFit.current = true; setPlaced(undefined); }
@@ -122,14 +128,14 @@ function TopologyInner() {
       const p = placed.placements.get(n.id) ?? { x: 0, y: 0, width: n.width, height: n.height };
       const base = { id: n.id, position: { x: p.x, y: p.y }, parentId: n.parentId, extent: n.parentId ? ('parent' as const) : undefined, sourcePosition: Position.Right, targetPosition: Position.Left };
       if (n.kind === 'plate') {
-        const node: PlateNodeType = { ...base, type: 'plate', draggable: false, selectable: false, focusable: false, style: { width: p.width, height: p.height }, data: { node: n.node, lane: n.lane, dim: n.dim, depth: n.depth, count: childCount.get(n.id) ?? 0 }, zIndex: -1 };
+        const node: PlateNodeType = { ...base, type: 'plate', draggable: false, selectable: false, focusable: false, width: p.width, height: p.height, style: { width: p.width, height: p.height }, data: { node: n.node, lane: n.lane, dim: n.dim, depth: n.depth, count: childCount.get(n.id) ?? 0 }, zIndex: -1 };
         return node;
       }
       if (n.kind === 'aggregate') {
-        const node: AggregateNodeType = { ...base, type: 'aggregate', style: { width: n.width, height: n.height }, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
+        const node: AggregateNodeType = { ...base, type: 'aggregate', width: n.width, height: n.height, style: { width: n.width, height: n.height }, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
         return node;
       }
-      const node: ResourceNodeType = { ...base, type: 'resource', style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0 } };
+      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0 } };
       return node;
     });
     const hasMetrics = Boolean(metrics && Object.keys(metrics.traffic).length);
@@ -171,7 +177,6 @@ function TopologyInner() {
         nodesConnectable={false}
         elevateNodesOnSelect
         onlyRenderVisibleElements
-        fitView
         deleteKeyCode={null}
         selectionKeyCode={null}
         multiSelectionKeyCode={null}
@@ -194,7 +199,7 @@ function TopologyInner() {
       {scene && scene.nodes.length === 0 && (
         <div className="empty">
           <div className="empty-card">
-            <div className="empty-title">{query ? `'${query}'에 맞는 자원이 없습니다` : '표시할 자원이 없습니다'}</div>
+            <div className="empty-title">{query ? `'${query}'에 맞는 자원이 없습니다` : tagFilters.length ? '선택한 태그를 가진 자원이 없습니다' : '표시할 자원이 없습니다'}</div>
             <div className="empty-sub">
               {scene.hiddenMatches > 0
                 ? `꺼진 레이어나 필터에 숨겨진 자원 ${scene.hiddenMatches}개가 검색어와 일치합니다. 하단 레이어나 왼쪽 필터를 켜 보세요.`

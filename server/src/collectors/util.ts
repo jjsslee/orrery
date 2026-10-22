@@ -63,6 +63,14 @@ export function lowerTags(tags?: Array<{ key?: string; value?: string }>): Recor
   return Object.keys(out).length ? out : undefined;
 }
 
+/** KMS-style {TagKey, TagValue} pairs → record (undefined when empty) */
+export function keyValueTags(tags?: Array<{ TagKey?: string; TagValue?: string }>): Record<string, string> | undefined {
+  if (!tags?.length) return undefined;
+  const out: Record<string, string> = {};
+  for (const t of tags) if (t.TagKey) out[t.TagKey] = t.TagValue ?? '';
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function truncate(s: string | undefined | null, n: number): string | null {
   if (!s) return null;
   return s.length > n ? `${s.slice(0, n)}…` : s;

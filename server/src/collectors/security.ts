@@ -3,14 +3,14 @@
  * KMS keys, Secrets Manager secrets and Cognito user pools.
  */
 import { EC2Client, paginateDescribeSecurityGroups, type IpPermission } from '@aws-sdk/client-ec2';
-import { IAMClient, paginateListRoles } from '@aws-sdk/client-iam';
-import { KMSClient, DescribeKeyCommand, paginateListAliases, paginateListKeys } from '@aws-sdk/client-kms';
+import { IAMClient, paginateListRoleTags, paginateListRoles } from '@aws-sdk/client-iam';
+import { KMSClient, DescribeKeyCommand, paginateListAliases, paginateListKeys, paginateListResourceTags } from '@aws-sdk/client-kms';
 import { SecretsManagerClient, paginateListSecrets } from '@aws-sdk/client-secrets-manager';
 import { CognitoIdentityProviderClient, DescribeUserPoolCommand, paginateListUserPools } from '@aws-sdk/client-cognito-identity-provider';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { edge, iso, nameFromTags, nid, tagsToRecord } from './ids.ts';
-import { attempt, collect, errMsg, truncate } from './util.ts';
+import { attempt, collect, errMsg, keyValueTags, truncate } from './util.ts';
 
 /** 'TCP 443', 'UDP 53-54', '모든 트래픽', 'ICMP' */
 export function portLabel(p: IpPermission): string {
@@ -96,6 +96,16 @@ async function securityGroups(ctx: CollectorContext, nodes: ResourceNode[], edge
 async function iamRoles(ctx: CollectorContext, nodes: ResourceNode[]) {
   const iam = ctx.clients.get(IAMClient);
   const roles = await collect(paginateListRoles({ client: iam }, { MaxItems: 1000 }), (p) => p.Roles);
+  // ListRoles omits tags; ListRoleTags per role, skipping service-linked roles (never tagged).
+  const tagsByRole = new Map<string, Record<string, string> | undefined>();
+  await Promise.all(
+    roles.map(async (r) => {
+      const name = r.RoleName;
+      if (!name || (r.Path ?? '').startsWith('/aws-service-role/')) return;
+      const tags = await attempt(ctx, `iam role tags ${name}`, () => collect(paginateListRoleTags({ client: iam }, { RoleName: name }), (p) => p.Tags));
+      tagsByRole.set(name, tagsToRecord(tags));
+    }),
+  );
   for (const r of roles) {
     if (!r.RoleName) continue;
     const serviceLinked = (r.Path ?? '').startsWith('/aws-service-role/');
@@ -117,7 +127,7 @@ async function iamRoles(ctx: CollectorContext, nodes: ResourceNode[]) {
         '서비스 연결': serviceLinked,
         설명: r.Description || null,
       },
-      tags: tagsToRecord(r.Tags),
+      tags: tagsByRole.get(r.RoleName) ?? tagsToRecord(r.Tags),
     });
   }
 }
@@ -141,6 +151,10 @@ async function kmsKeys(ctx: CollectorContext, nodes: ResourceNode[]) {
       if (!k.KeyId) return;
       const res = await attempt(ctx, `kms describe ${k.KeyId}`, () => kms.send(new DescribeKeyCommand({ KeyId: k.KeyId })));
       const m = res?.KeyMetadata;
+      // AWS-managed keys reject ListResourceTags: only customer-managed keys are asked.
+      const tags = m?.KeyManager === 'CUSTOMER'
+        ? await attempt(ctx, `kms tags ${k.KeyId}`, () => collect(paginateListResourceTags({ client: kms }, { KeyId: k.KeyId }), (p) => p.Tags))
+        : undefined;
       const names = aliasesByKey.get(k.KeyId) ?? [];
       const state = m?.KeyState ?? 'unknown';
       const status: Status = state === 'Enabled' ? 'healthy' : state === 'Disabled' ? 'inactive' : state === 'PendingDeletion' || state === 'PendingReplicaDeletion' ? 'warning' : state === 'Unavailable' ? 'critical' : 'unknown';
@@ -165,6 +179,7 @@ async function kmsKeys(ctx: CollectorContext, nodes: ResourceNode[]) {
           설명: m?.Description || null,
           _aliases: names.join(',') || null,
         },
+        tags: keyValueTags(tags),
       });
     }),
   );

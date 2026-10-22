@@ -3,12 +3,13 @@
  *   lambda → vpc (containment when VPC-attached), lambda → sg (attached),
  *   lambda → IAM role (assumes), SQS/DynamoDB stream → lambda (invokes),
  *   lambda → DLQ (routes). Env var values, KMS and role ARNs go to refs.
+ * Tags: ListTags per function (ListFunctions does not return them).
  */
-import { LambdaClient, paginateListEventSourceMappings, paginateListFunctions } from '@aws-sdk/client-lambda';
+import { LambdaClient, ListTagsCommand, paginateListEventSourceMappings, paginateListFunctions } from '@aws-sdk/client-lambda';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { arnName, arnPath, arnService, edge, iso, nid, statusFromState, fmtBytes } from './ids.ts';
-import { collect, errMsg, lambdaNameFromArn } from './util.ts';
+import { arnName, arnPath, arnService, edge, iso, nid, statusFromState, fmtBytes, tagsToRecord } from './ids.ts';
+import { attempt, collect, errMsg, lambdaNameFromArn } from './util.ts';
 
 /** Event source ARN → node id of the source we collect (undefined for kinesis/msk/...) */
 export function eventSourceNodeId(arn: string): string | undefined {
@@ -30,6 +31,15 @@ async function run(ctx: CollectorContext) {
       return [];
     }),
   ]);
+
+  const tagsByArn = new Map<string, Record<string, string> | undefined>();
+  await Promise.all(
+    functions.map(async (f) => {
+      if (!f.FunctionArn) return;
+      const res = await attempt(ctx, `lambda tags ${f.FunctionName}`, () => lambda.send(new ListTagsCommand({ Resource: f.FunctionArn })));
+      tagsByArn.set(f.FunctionArn, tagsToRecord(res?.Tags));
+    }),
+  );
 
   for (const f of functions) {
     if (!f.FunctionName) continue;
@@ -73,6 +83,7 @@ async function run(ctx: CollectorContext) {
         '코드 크기': f.CodeSize != null ? fmtBytes(f.CodeSize) : null,
         '환경 변수': envValues.length,
       },
+      tags: f.FunctionArn ? tagsByArn.get(f.FunctionArn) : undefined,
       refs,
     });
     for (const sg of f.VpcConfig?.SecurityGroupIds ?? []) edges.push(edge('attached', nid('lambda', name), nid('security-group', sg)));

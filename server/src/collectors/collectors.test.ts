@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hostOf, lambdaNameFromArn, roleNameFromArn } from './util.ts';
+import { hostOf, keyValueTags, lambdaNameFromArn, lowerTags, roleNameFromArn } from './util.ts';
+import { tagsToRecord } from './ids.ts';
 import { hostFromIntegrationUri, lambdaFromIntegrationUri, summariseRecords } from './edge.ts';
 import { eventSourceNodeId } from './lambda.ts';
 import { refsFromDefinition, targetNodeId } from './messaging.ts';
@@ -15,6 +16,19 @@ test('ARN helpers', () => {
   assert.equal(roleNameFromArn('arn:aws:iam::000000000000:role/service-role/my-role'), 'my-role');
   assert.equal(hostOf('https://api.example.com/v1/{proxy}'), 'api.example.com');
   assert.equal(hostOf('api.example.com'), 'api.example.com');
+});
+
+test('tag converters build {key: value} records and omit empty sets', () => {
+  assert.deepEqual(tagsToRecord([{ Key: 'env', Value: 'dev' }, { Key: 'team' }]), { env: 'dev', team: '' });
+  assert.deepEqual(tagsToRecord({ env: 'dev' }), { env: 'dev' });
+  assert.equal(tagsToRecord([]), undefined);
+  assert.equal(tagsToRecord({}), undefined);
+  assert.equal(tagsToRecord(undefined), undefined);
+  assert.deepEqual(lowerTags([{ key: 'env', value: 'dev' }, { value: 'orphan' }]), { env: 'dev' });
+  assert.equal(lowerTags([]), undefined);
+  assert.deepEqual(keyValueTags([{ TagKey: 'env', TagValue: 'dev' }, { TagKey: 'owner' }]), { env: 'dev', owner: '' });
+  assert.equal(keyValueTags([{ TagValue: 'x' }]), undefined);
+  assert.equal(keyValueTags(undefined), undefined);
 });
 
 test('API Gateway integration URIs', () => {

@@ -3,7 +3,7 @@
  * and Route 53 hosted zones. Origins, alias targets and HTTP integration hosts
  * go to refs; Lambda integrations become explicit 'invokes' edges.
  */
-import { CloudFrontClient, paginateListDistributions } from '@aws-sdk/client-cloudfront';
+import { CloudFrontClient, ListTagsForResourceCommand as ListDistributionTagsCommand, paginateListDistributions } from '@aws-sdk/client-cloudfront';
 import { APIGatewayClient, GetIntegrationCommand, GetStagesCommand, paginateGetResources, paginateGetRestApis, type Integration } from '@aws-sdk/client-api-gateway';
 import {
   ApiGatewayV2Client,
@@ -13,11 +13,18 @@ import {
   type Api,
   type Integration as IntegrationV2,
 } from '@aws-sdk/client-apigatewayv2';
-import { Route53Client, ListResourceRecordSetsCommand, paginateListHostedZones, type ListResourceRecordSetsCommandOutput, type ResourceRecordSet } from '@aws-sdk/client-route-53';
+import {
+  Route53Client,
+  ListResourceRecordSetsCommand,
+  ListTagsForResourcesCommand,
+  paginateListHostedZones,
+  type ListResourceRecordSetsCommandOutput,
+  type ResourceRecordSet,
+} from '@aws-sdk/client-route-53';
 import type { ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { edge, iso, nid } from './ids.ts';
-import { attempt, collect, countSummary, errMsg, hostOf, lambdaNameFromArn } from './util.ts';
+import { edge, iso, nid, tagsToRecord } from './ids.ts';
+import { attempt, chunk, collect, countSummary, errMsg, hostOf, lambdaNameFromArn } from './util.ts';
 
 const MAX_V1_INTEGRATION_CALLS = 200;
 const MAX_RECORDS_PER_ZONE = 2000;
@@ -66,6 +73,14 @@ export function summariseRecords(records: ResourceRecordSet[], region: string): 
 async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
   const cf = ctx.clients.get(CloudFrontClient);
   const items = await collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items);
+  const tagsByArn = new Map<string, Record<string, string> | undefined>();
+  await Promise.all(
+    items.map(async (d) => {
+      if (!d.ARN) return;
+      const res = await attempt(ctx, `cloudfront tags ${d.Id}`, () => cf.send(new ListDistributionTagsCommand({ Resource: d.ARN })));
+      tagsByArn.set(d.ARN, tagsToRecord(res?.Tags?.Items));
+    }),
+  );
   for (const d of items) {
     if (!d.Id) continue;
     const origins = d.Origins?.Items ?? [];
@@ -95,6 +110,7 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
         WAF: Boolean(d.WebACLId),
         설명: d.Comment || null,
       },
+      tags: d.ARN ? tagsByArn.get(d.ARN) : undefined,
       refs: origins.map((o) => o.DomainName).filter((o): o is string => Boolean(o)),
     });
   }
@@ -163,6 +179,7 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
           설명: api.description || null,
           _apiKind: 'rest',
         },
+        tags: tagsToRecord(api.tags),
         refs: [...refs],
       });
       for (const [fn, routes] of lambdaRoutes) {
@@ -244,6 +261,14 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
 async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
   const r53 = ctx.clients.get(Route53Client);
   const zones = await collect(paginateListHostedZones({ client: r53 }, {}), (p) => p.HostedZones);
+  const zoneIds = zones.map((z) => z.Id?.replace(/^\/hostedzone\//, '')).filter((id): id is string => Boolean(id));
+  const tagsByZone = new Map<string, Record<string, string> | undefined>();
+  await Promise.all(
+    chunk(zoneIds, 10).map(async (batch) => {
+      const res = await attempt(ctx, 'route53 tags', () => r53.send(new ListTagsForResourcesCommand({ ResourceType: 'hostedzone', ResourceIds: batch })));
+      for (const set of res?.ResourceTagSets ?? []) if (set.ResourceId) tagsByZone.set(set.ResourceId, tagsToRecord(set.Tags));
+    }),
+  );
   await Promise.all(
     zones.map(async (z) => {
       if (!z.Id) return;
@@ -285,6 +310,7 @@ async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
           레코드: summary.names.join(', ') || null,
           설명: z.Config?.Comment || null,
         },
+        tags: tagsByZone.get(zoneId),
         refs: summary.refs,
       });
     }),

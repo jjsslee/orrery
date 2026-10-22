@@ -4,14 +4,23 @@
  *   queue → DLQ (routes), topic → lambda (invokes), topic → queue (publishes),
  *   rule → target (invokes), state machine → IAM role (assumes)
  */
-import { SQSClient, GetQueueAttributesCommand, paginateListQueues } from '@aws-sdk/client-sqs';
-import { SNSClient, GetTopicAttributesCommand, paginateListSubscriptionsByTopic, paginateListTopics } from '@aws-sdk/client-sns';
-import { EventBridgeClient, ListEventBusesCommand, ListRulesCommand, ListTargetsByRuleCommand, type EventBus, type Rule, type Target } from '@aws-sdk/client-eventbridge';
-import { SFNClient, DescribeStateMachineCommand, paginateListStateMachines } from '@aws-sdk/client-sfn';
+import { SQSClient, GetQueueAttributesCommand, ListQueueTagsCommand, paginateListQueues } from '@aws-sdk/client-sqs';
+import { SNSClient, GetTopicAttributesCommand, ListTagsForResourceCommand as ListTopicTagsCommand, paginateListSubscriptionsByTopic, paginateListTopics } from '@aws-sdk/client-sns';
+import {
+  EventBridgeClient,
+  ListEventBusesCommand,
+  ListRulesCommand,
+  ListTagsForResourceCommand as ListRuleTagsCommand,
+  ListTargetsByRuleCommand,
+  type EventBus,
+  type Rule,
+  type Target,
+} from '@aws-sdk/client-eventbridge';
+import { SFNClient, DescribeStateMachineCommand, ListTagsForResourceCommand as ListStateMachineTagsCommand, paginateListStateMachines } from '@aws-sdk/client-sfn';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { arnName, arnService, edge, iso, nid } from './ids.ts';
-import { attempt, collect, countSummary, errMsg, lambdaNameFromArn, truncate } from './util.ts';
+import { arnName, arnService, edge, iso, nid, tagsToRecord } from './ids.ts';
+import { attempt, collect, countSummary, errMsg, lambdaNameFromArn, lowerTags, truncate } from './util.ts';
 
 /** EventBridge target ARN → node id of a resource we collect (undefined → keep as ref) */
 export function targetNodeId(arn: string): string | undefined {
@@ -41,7 +50,10 @@ async function sqs(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
   await Promise.all(
     urls.map(async (url) => {
       const name = url.split('/').pop() ?? url;
-      const res = await attempt(ctx, `sqs attributes ${name}`, () => client.send(new GetQueueAttributesCommand({ QueueUrl: url, AttributeNames: ['All'] })));
+      const [res, tagRes] = await Promise.all([
+        attempt(ctx, `sqs attributes ${name}`, () => client.send(new GetQueueAttributesCommand({ QueueUrl: url, AttributeNames: ['All'] }))),
+        attempt(ctx, `sqs tags ${name}`, () => client.send(new ListQueueTagsCommand({ QueueUrl: url }))),
+      ]);
       const a: Record<string, string | undefined> = res?.Attributes ?? {};
       let dlq: string | undefined;
       try {
@@ -70,6 +82,7 @@ async function sqs(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
           암호화: a.KmsMasterKeyId ?? (a.SqsManagedSseEnabled === 'true' ? 'SQS 관리' : null),
           생성: a.CreatedTimestamp ? iso(new Date(Number(a.CreatedTimestamp) * 1000)) : null,
         },
+        tags: tagsToRecord(tagRes?.Tags),
         refs: a.KmsMasterKeyId ? [a.KmsMasterKeyId] : undefined,
       });
       if (dlq) edges.push(edge('routes', nid('sqs-queue', name), nid('sqs-queue', arnName(dlq)), { label: 'DLQ' }));
@@ -85,9 +98,10 @@ async function sns(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
       if (!t.TopicArn) return;
       const arn = t.TopicArn;
       const name = arnName(arn);
-      const [attrs, subs] = await Promise.all([
+      const [attrs, subs, tagRes] = await Promise.all([
         attempt(ctx, `sns attributes ${name}`, () => client.send(new GetTopicAttributesCommand({ TopicArn: arn }))),
         attempt(ctx, `sns subscriptions ${name}`, () => collect(paginateListSubscriptionsByTopic({ client }, { TopicArn: arn }), (p) => p.Subscriptions)),
+        attempt(ctx, `sns tags ${name}`, () => client.send(new ListTopicTagsCommand({ ResourceArn: arn }))),
       ]);
       const a = attrs?.Attributes ?? {};
       const byProtocol: Record<string, number> = {};
@@ -120,6 +134,7 @@ async function sns(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
           구독: countSummary(byProtocol),
           암호화: a.KmsMasterKeyId ?? null,
         },
+        tags: tagsToRecord(tagRes?.Tags),
         refs: a.KmsMasterKeyId ? [a.KmsMasterKeyId] : undefined,
       });
     }),
@@ -157,7 +172,11 @@ async function eventbridge(ctx: CollectorContext, nodes: ResourceNode[], edges: 
       if (!r.Name) return;
       const nativeId = bus === 'default' ? r.Name : `${bus}/${r.Name}`;
       const id = nid('eventbridge-rule', nativeId);
-      const res = await attempt(ctx, `eventbridge targets ${nativeId}`, () => client.send(new ListTargetsByRuleCommand({ Rule: r.Name, EventBusName: bus })));
+      const ruleArn = r.Arn;
+      const [res, tagRes] = await Promise.all([
+        attempt(ctx, `eventbridge targets ${nativeId}`, () => client.send(new ListTargetsByRuleCommand({ Rule: r.Name, EventBusName: bus }))),
+        ruleArn ? attempt(ctx, `eventbridge tags ${nativeId}`, () => client.send(new ListRuleTagsCommand({ ResourceARN: ruleArn }))) : undefined,
+      ]);
       const targets: Target[] = res?.Targets ?? [];
       const refs = new Set<string>();
       for (const t of targets) {
@@ -190,6 +209,7 @@ async function eventbridge(ctx: CollectorContext, nodes: ResourceNode[], edges: 
           '관리 주체': r.ManagedBy ?? null,
           _ruleName: r.Name,
         },
+        tags: tagsToRecord(tagRes?.Tags),
         refs: [...refs],
       });
     }),
@@ -202,7 +222,10 @@ async function stepFunctions(ctx: CollectorContext, nodes: ResourceNode[], edges
   await Promise.all(
     machines.map(async (m) => {
       if (!m.name || !m.stateMachineArn) return;
-      const detail = await attempt(ctx, `sfn describe ${m.name}`, () => client.send(new DescribeStateMachineCommand({ stateMachineArn: m.stateMachineArn })));
+      const [detail, tagRes] = await Promise.all([
+        attempt(ctx, `sfn describe ${m.name}`, () => client.send(new DescribeStateMachineCommand({ stateMachineArn: m.stateMachineArn }))),
+        attempt(ctx, `sfn tags ${m.name}`, () => client.send(new ListStateMachineTagsCommand({ resourceArn: m.stateMachineArn }))),
+      ]);
       const refs = new Set(refsFromDefinition(detail?.definition));
       if (detail?.roleArn) refs.add(detail.roleArn);
       const status = detail?.status ?? 'ACTIVE';
@@ -223,6 +246,7 @@ async function stepFunctions(ctx: CollectorContext, nodes: ResourceNode[], edges
           설명: detail?.description || null,
           '참조 리소스': refs.size,
         },
+        tags: lowerTags(tagRes?.tags),
         refs: [...refs],
       });
       if (detail?.roleArn) edges.push(edge('assumes', nid('step-function', m.name), nid('iam-role', arnName(detail.roleArn))));

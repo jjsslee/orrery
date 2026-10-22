@@ -5,13 +5,17 @@ import { CATEGORY_LABEL, STATUS_LABEL } from '@orrery/shared';
 import { useStore } from '../model/store';
 import { CATEGORY_ORDER, STATUS_ORDER, TYPES_BY_CATEGORY, TYPE_META } from '../model/types';
 import { TypeIcon } from '../components/TypeIcon';
+import { TagPanel } from './TagPanel';
+import { tagFilterLabel } from '../model/tags';
 
 export function Rail() {
   const graph = useStore((s) => s.graph);
   const query = useStore((s) => s.query);
   const categories = useStore((s) => s.categories);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
-  const { setQuery, toggleCategory, toggleType } = useStore.getState();
+  const railTab = useStore((s) => s.railTab);
+  const tagFilters = useStore((s) => s.tagFilters);
+  const { setQuery, toggleCategory, toggleType, setRailTab, removeTagFilter } = useStore.getState();
 
   const counts = useMemo(() => {
     const byType = new Map<ResourceType, number>();
@@ -40,6 +44,27 @@ export function Rail() {
       </label>
 
       {graph && (
+        <div className="rail-tabs" role="tablist" aria-label="필터 종류">
+          <button type="button" role="tab" aria-selected={railTab === 'types'} className={`seg ${railTab === 'types' ? 'on' : ''}`} onClick={() => setRailTab('types')}>유형</button>
+          <button type="button" role="tab" aria-selected={railTab === 'tags'} className={`seg ${railTab === 'tags' ? 'on' : ''}`} onClick={() => setRailTab('tags')}>
+            태그{tagFilters.length > 0 && <span className="seg-badge tnum">{tagFilters.length}</span>}
+          </button>
+        </div>
+      )}
+
+      {graph && railTab === 'types' && tagFilters.length > 0 && (
+        <div className="tag-chips compact">
+          {tagFilters.map((t) => (
+            <button key={`${t.key}=${t.value ?? ''}`} type="button" className="chip" onClick={() => removeTagFilter(t)} title="태그 필터 제거">
+              {tagFilterLabel(t)} <X size={11} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {graph && railTab === 'tags' && <TagPanel />}
+
+      {graph && railTab === 'types' && (
         <section className="rail-status" aria-label="상태 요약">
           <div className="status-bar" role="img" aria-label={STATUS_ORDER.map((s) => `${STATUS_LABEL[s]} ${counts.byStatus[s]}`).join(', ')}>
             {STATUS_ORDER.filter((s) => counts.byStatus[s] > 0).map((s) => (
@@ -54,7 +79,7 @@ export function Rail() {
         </section>
       )}
 
-      <nav className="rail-tree">
+      {railTab === 'types' && <nav className="rail-tree">
         {CATEGORY_ORDER.map((c) => {
           const on = categories[c];
           const types = TYPES_BY_CATEGORY[c].filter((t) => (counts.byType.get(t) ?? 0) > 0);
@@ -86,7 +111,7 @@ export function Rail() {
             </section>
           );
         })}
-      </nav>
+      </nav>}
 
       {graph && (
         <footer className="rail-foot">

@@ -1,11 +1,11 @@
 /**
- * DynamoDB tables: ListTables + DescribeTable per table (no tag calls).
+ * DynamoDB tables: ListTables + DescribeTable + ListTagsOfResource per table.
  * The KMS key goes to refs so the assembler draws the encrypts edge.
  */
-import { DynamoDBClient, DescribeTableCommand, paginateListTables } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, DescribeTableCommand, ListTagsOfResourceCommand, paginateListTables, type Tag } from '@aws-sdk/client-dynamodb';
 import type { ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { fmtBytes, iso, nid, statusFromState } from './ids.ts';
+import { fmtBytes, iso, nid, statusFromState, tagsToRecord } from './ids.ts';
 import { attempt, collect } from './util.ts';
 
 async function run(ctx: CollectorContext) {
@@ -18,6 +18,19 @@ async function run(ctx: CollectorContext) {
       const res = await attempt(ctx, `dynamodb describe ${name}`, () => ddb.send(new DescribeTableCommand({ TableName: name })));
       const t = res?.Table;
       if (!t?.TableName) return;
+      const arn = t.TableArn;
+      const tags = arn
+        ? await attempt(ctx, `dynamodb tags ${name}`, async () => {
+            const out: Tag[] = [];
+            let next: string | undefined;
+            do {
+              const page = await ddb.send(new ListTagsOfResourceCommand({ ResourceArn: arn, NextToken: next }));
+              out.push(...(page.Tags ?? []));
+              next = page.NextToken;
+            } while (next);
+            return tagsToRecord(out);
+          })
+        : undefined;
       const billing = t.BillingModeSummary?.BillingMode ?? ((t.ProvisionedThroughput?.ReadCapacityUnits ?? 0) > 0 ? 'PROVISIONED' : 'PAY_PER_REQUEST');
       const rcu = t.ProvisionedThroughput?.ReadCapacityUnits ?? 0;
       const wcu = t.ProvisionedThroughput?.WriteCapacityUnits ?? 0;
@@ -45,6 +58,7 @@ async function run(ctx: CollectorContext) {
           암호화: t.SSEDescription?.SSEType ?? '기본',
           생성일: iso(t.CreationDateTime),
         },
+        tags,
         refs,
       });
     }),

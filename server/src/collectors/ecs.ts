@@ -29,7 +29,7 @@ import { attempt, chunk, collect, errMsg, lowerTags } from './util.ts';
  */
 async function describeClusters(ctx: CollectorContext, ecs: ECSClient, arns: string[]): Promise<Cluster[]> {
   try {
-    const res = await ecs.send(new DescribeClustersCommand({ clusters: arns, include: ['STATISTICS'] }));
+    const res = await ecs.send(new DescribeClustersCommand({ clusters: arns, include: ['STATISTICS', 'TAGS'] }));
     return res.clusters ?? [];
   } catch (err) {
     ctx.log(`[ecs] DescribeClusters 일괄 호출 실패, 클러스터별로 재시도: ${errMsg(err)}`);
@@ -37,7 +37,7 @@ async function describeClusters(ctx: CollectorContext, ecs: ECSClient, arns: str
   const out: Cluster[] = [];
   await Promise.all(
     arns.map(async (arn) => {
-      const res = await attempt(ctx, `ecs describe cluster ${arnName(arn)}`, () => ecs.send(new DescribeClustersCommand({ clusters: [arn], include: ['STATISTICS'] })));
+      const res = await attempt(ctx, `ecs describe cluster ${arnName(arn)}`, () => ecs.send(new DescribeClustersCommand({ clusters: [arn], include: ['STATISTICS', 'TAGS'] })));
       if (res?.clusters?.length) out.push(...res.clusters);
       else out.push({ clusterArn: arn, clusterName: arnName(arn), status: 'ACCESS_DENIED' });
     }),

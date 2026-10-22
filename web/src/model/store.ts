@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
 import { api } from '../api/client';
+import { sameTagFilter, type TagFilter } from './tags';
 
 export type ViewMode = 'topology' | 'types';
 
@@ -53,6 +54,11 @@ export interface AppState {
   expanded: Set<string>;
   /** Monotonic counter: bump to ask the canvas to fit the view */
   fitRequest: number;
+  railTab: 'types' | 'tags';
+  /** Active tag filters; a resource must satisfy all of them */
+  tagFilters: TagFilter[];
+  /** Also show resources one hop away from a tagged resource */
+  tagNeighbors: boolean;
 
   bootstrap(): Promise<void>;
   setProfile(profile: string): Promise<void>;
@@ -69,6 +75,11 @@ export interface AppState {
   toggleExpanded(id: string): void;
   setTheme(t: 'dark' | 'light'): void;
   requestFit(): void;
+  setRailTab(t: 'types' | 'tags'): void;
+  addTagFilter(f: TagFilter): void;
+  removeTagFilter(f: TagFilter): void;
+  clearTagFilters(): void;
+  setTagNeighbors(v: boolean): void;
 }
 
 let abort: AbortController | undefined;
@@ -89,6 +100,9 @@ export const useStore = create<AppState>((set, get) => ({
   overlays: { security: false, iam: false, encryption: false, targetGroups: false, isolated: false, traffic: true },
   expanded: new Set(),
   fitRequest: 0,
+  railTab: 'types',
+  tagFilters: [],
+  tagNeighbors: false,
 
   async bootstrap() {
     document.documentElement.dataset.theme = get().theme;
@@ -105,14 +119,14 @@ export const useStore = create<AppState>((set, get) => ({
   async setProfile(profile) {
     const p = get().profiles.find((x) => x.name === profile);
     const region = p?.region ?? get().region;
-    set({ profile, region, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set() });
+    set({ profile, region, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ profile, region });
     void api.regions(profile).then(({ regions }) => set({ regions })).catch(() => set({ regions: [region] }));
     await get().load(false);
   },
 
   async setRegion(region) {
-    set({ region, graph: undefined, metrics: undefined, selectedId: undefined, expanded: new Set() });
+    set({ region, graph: undefined, metrics: undefined, selectedId: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ region });
     await get().load(false);
   },
@@ -167,6 +181,16 @@ export const useStore = create<AppState>((set, get) => ({
   toggleExpanded: (id) => set((s) => { const next = new Set(s.expanded); next.has(id) ? next.delete(id) : next.add(id); return { expanded: next }; }),
   setTheme: (theme) => { document.documentElement.dataset.theme = theme; savePrefs({ theme }); set({ theme }); },
   requestFit: () => set((s) => ({ fitRequest: s.fitRequest + 1 })),
+  setRailTab: (railTab) => set({ railTab }),
+  addTagFilter: (f) => set((s) => {
+    // A key-only filter is replaced by a value filter on the same key (and vice versa)
+    const rest = s.tagFilters.filter((x) => x.key !== f.key || (x.value !== undefined && f.value !== undefined && x.value !== f.value));
+    if (rest.some((x) => sameTagFilter(x, f))) return { railTab: 'tags' };
+    return { tagFilters: [...rest, f], railTab: 'tags' };
+  }),
+  removeTagFilter: (f) => set((s) => ({ tagFilters: s.tagFilters.filter((x) => !sameTagFilter(x, f)) })),
+  clearTagFilters: () => set({ tagFilters: [] }),
+  setTagNeighbors: (tagNeighbors) => set({ tagNeighbors }),
 }));
 
 /** Aggregate id a node would fold into (parent + type). Mirrors layout/prepare.ts */

@@ -16,6 +16,7 @@ export function Inspector() {
   const metricsLoading = useStore((s) => s.metricsLoading);
   const select = useStore((s) => s.select);
   const setView = useStore((s) => s.setView);
+  const addTagFilter = useStore((s) => s.addTagFilter);
   const [copied, setCopied] = useState(false);
   const [tableView, setTableView] = useState(false);
 
@@ -158,8 +159,16 @@ export function Inspector() {
 
         {node.tags && Object.keys(node.tags).length > 0 && (
           <section className="insp-section">
-            <h3>태그</h3>
-            <dl className="props">{Object.entries(node.tags).map(([k, v]) => <div key={k} className="prop"><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+            <h3>태그 <span className="muted">클릭하면 같은 태그의 자원만 봅니다</span></h3>
+            <ul className="tag-list">
+              {Object.entries(node.tags).map(([k, v]) => (
+                <li key={k}>
+                  <button type="button" className="tag-pill" onClick={() => addTagFilter({ key: k, value: v })} title={`${k} = ${v} 태그로 필터`}>
+                    <span className="tag-pill-key">{k}</span><span className="tag-pill-val">{v || '(빈 값)'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 

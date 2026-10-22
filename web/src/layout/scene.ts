@@ -2,6 +2,7 @@ import type { Category, EdgeKind, ResourceEdge, ResourceGraph, ResourceNode, Res
 import { CATEGORY_LABEL } from '@orrery/shared';
 import { LIVE_EDGE_KINDS, TYPE_META } from '../model/types';
 import type { Overlays } from '../model/store';
+import { matchesTags, type TagFilter } from '../model/tags';
 
 export interface SceneNode {
   id: string;
@@ -50,6 +51,8 @@ export interface SceneInput {
   categories: Record<Category, boolean>;
   hiddenTypes: Set<ResourceType>;
   query: string;
+  tagFilters?: TagFilter[];
+  tagNeighbors?: boolean;
   expanded: Set<string>;
   selectedId?: string;
   traffic?: Record<string, number>;
@@ -101,13 +104,15 @@ export function buildScene(input: SceneInput): Scene {
   let visible = new Set<string>();
   for (const n of graph.nodes) if (typeVisible(n.type, input)) visible.add(n.id);
 
-  // 2. search: keep matches, their ancestors and 1-hop neighbours (with ancestors)
+  // 2. narrowing: tag filters, then search. Each keeps its matches, their ancestors and
+  //    (optionally) 1-hop neighbours with their ancestors. Matches never fold into aggregates.
   const matched = new Set<string>();
   let hiddenMatches = 0;
-  if (q) {
+  const narrow = (pred: (n: ResourceNode) => boolean, withNeighbors: boolean) => {
+    const hits = new Set<string>();
     for (const n of graph.nodes) {
-      if (!matches(n, q)) continue;
-      if (visible.has(n.id)) matched.add(n.id);
+      if (!pred(n)) continue;
+      if (visible.has(n.id)) hits.add(n.id);
       else hiddenMatches++;
     }
     const keep = new Set<string>();
@@ -115,12 +120,17 @@ export function buildScene(input: SceneInput): Scene {
       let cur: ResourceNode | undefined = byId.get(id);
       while (cur) { keep.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
     };
-    for (const id of matched) {
+    for (const id of hits) {
       addWithAncestors(id);
-      for (const nb of adjacency.get(id) ?? []) if (visible.has(nb)) addWithAncestors(nb);
+      if (withNeighbors) for (const nb of adjacency.get(id) ?? []) if (visible.has(nb)) addWithAncestors(nb);
     }
     visible = new Set([...visible].filter((id) => keep.has(id)));
-  }
+    for (const id of hits) matched.add(id);
+  };
+  const tagFilters = input.tagFilters ?? [];
+  if (tagFilters.length) narrow((n) => matchesTags(n, tagFilters), Boolean(input.tagNeighbors));
+  if (q) narrow((n) => matches(n, q), true);
+  if (tagFilters.length && q) for (const id of [...matched]) if (!visible.has(id)) matched.delete(id);
 
   // 3. edges between visible nodes, with target groups folded unless shown
   const rawEdges: ResourceEdge[] = [];

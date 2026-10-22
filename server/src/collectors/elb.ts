@@ -3,9 +3,11 @@
  *   lb → vpc (containment), lb → security group (attached),
  *   lb → target group (targets), target group → instance/lambda/alb (targets)
  * IP targets are left to the ECS collector, which knows service ↔ target group.
+ * Tags come from DescribeTags, 20 ARNs per call.
  */
 import {
   ElasticLoadBalancingV2Client,
+  DescribeTagsCommand,
   DescribeTargetHealthCommand,
   paginateDescribeListeners,
   paginateDescribeLoadBalancers,
@@ -14,8 +16,8 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { arnName, edge, iso, nid, statusFromState } from './ids.ts';
-import { attempt, collect } from './util.ts';
+import { arnName, edge, iso, nid, statusFromState, tagsToRecord } from './ids.ts';
+import { attempt, chunk, collect } from './util.ts';
 
 interface HealthSummary { healthy: number; total: number }
 
@@ -55,7 +57,13 @@ async function run(ctx: CollectorContext) {
 
   const listenerSummary = new Map<string, string[]>();
   const tgHealth = new Map<string, TargetHealthDescription[]>();
+  const tagsByArn = new Map<string, Record<string, string> | undefined>();
+  const taggable = [...lbs.map((lb) => lb.LoadBalancerArn), ...tgs.map((tg) => tg.TargetGroupArn)].filter((a): a is string => Boolean(a));
   await Promise.all([
+    ...chunk(taggable, 20).map(async (batch) => {
+      const res = await attempt(ctx, 'elb tags', () => elb.send(new DescribeTagsCommand({ ResourceArns: batch })));
+      for (const d of res?.TagDescriptions ?? []) if (d.ResourceArn) tagsByArn.set(d.ResourceArn, tagsToRecord(d.Tags));
+    }),
     ...lbs.map(async (lb) => {
       if (!lb.LoadBalancerArn) return;
       const listeners = await attempt(ctx, `elb listeners ${lb.LoadBalancerName}`, () =>
@@ -101,6 +109,7 @@ async function run(ctx: CollectorContext) {
         '로드밸런서 수': tg.LoadBalancerArns?.length ?? 0,
         'IP 유형': tg.IpAddressType ?? null,
       },
+      tags: tagsByArn.get(arn),
     });
     for (const lbArn of tg.LoadBalancerArns ?? []) {
       edges.push(edge('targets', nid('load-balancer', lbArn), nid('target-group', arn), { status, label: known ? statusLabel : undefined }));
@@ -157,6 +166,7 @@ async function run(ctx: CollectorContext) {
         생성: iso(lb.CreatedTime),
         _lbType: lb.Type ?? 'application',
       },
+      tags: tagsByArn.get(arn),
     });
     for (const sg of lb.SecurityGroups ?? []) edges.push(edge('attached', nid('load-balancer', arn), nid('security-group', sg)));
   }

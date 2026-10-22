@@ -111,7 +111,8 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
     'Access-Control-Allow-Origin': '*',
   });
   const send = (e: CollectEvent) => raw.write(`data: ${JSON.stringify(e)}\n\n`);
-  const ping = setInterval(() => raw.write(': ping\n\n'), 15_000);
+  // A real event (not an SSE comment) so the client can detect a dead stream.
+  const ping = setInterval(() => send({ type: 'ping' }), 15_000);
   try {
     const s = await session(req.query);
     if (req.query.refresh !== '1') {
