@@ -33,6 +33,10 @@ const savePrefs = (p: Persisted) => { try { localStorage.setItem(PERSIST_KEY, JS
 
 export interface AppState {
   profiles: ProfileInfo[];
+  /** Server-side default (ORRERY_DEFAULT_PROFILE / AWS_PROFILE / default) */
+  defaultProfile?: string;
+  /** True once the user picked a profile in this session; auto-picked ones may be swapped on auth failure */
+  profileChosen: boolean;
   collectorLabels: Record<string, string>;
   profile: string;
   region: string;
@@ -107,6 +111,7 @@ const ALL_ON: Record<Category, boolean> = { compute: true, network: true, databa
 
 export const useStore = create<AppState>((set, get) => ({
   profiles: [],
+  profileChosen: false,
   collectorLabels: {},
   profile: loadPrefs().profile ?? '',
   region: loadPrefs().region ?? '',
@@ -134,8 +139,8 @@ export const useStore = create<AppState>((set, get) => ({
     const wanted = get().profile;
     const profile = profiles.find((p) => p.name === wanted)?.name ?? defaultProfile;
     const region = get().region || profiles.find((p) => p.name === profile)?.region || 'ap-northeast-2';
-    set({ profiles, collectorLabels, profile, region });
-    savePrefs({ profile, region });
+    // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
+    set({ profiles, defaultProfile, collectorLabels, profile, region });
     void get().load(false);
     void api.regions(profile).then(({ regions }) => set({ regions })).catch(() => set({ regions: [region] }));
   },
@@ -143,7 +148,7 @@ export const useStore = create<AppState>((set, get) => ({
   async setProfile(profile) {
     const p = get().profiles.find((x) => x.name === profile);
     const region = p?.region ?? get().region;
-    set({ profile, region, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
+    set({ profile, region, profileChosen: true, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ profile, region });
     void api.regions(profile).then(({ regions }) => set({ regions })).catch(() => set({ regions: [region] }));
     await get().load(false);
@@ -179,11 +184,20 @@ export const useStore = create<AppState>((set, get) => ({
         return;
       }
       set({ graph, loading: { active: false, reports: {}, order }, fitRequest: get().fitRequest + 1, changed: {} });
+      savePrefs({ profile, region });
       void api.identity(profile, region).then((id) => set({ identity: { account: id.account, arn: id.arn } })).catch(() => {});
       void get().loadMetrics(refresh);
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       if (silent) { console.warn('live re-collect failed', err); set({ liveBusy: false }); return; }
+      // A saved-but-broken profile (401) that the user did not pick this session: fall back to the server default.
+      const { defaultProfile, profileChosen } = get();
+      if ((err as { status?: number }).status === 401 && !profileChosen && defaultProfile && defaultProfile !== profile) {
+        console.info(`[orrery] profile '${profile}' failed to authenticate; switching to '${defaultProfile}'`);
+        await get().setProfile(defaultProfile);
+        set({ profileChosen: false });
+        return;
+      }
       set((s) => ({ loading: { ...s.loading, active: false, error: (err as Error).message } }));
     }
   },

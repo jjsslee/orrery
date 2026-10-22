@@ -13,8 +13,41 @@ import { collectorLabels, runCollectors } from './collectors/index.ts';
 import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
+import { readFileSync } from 'node:fs';
+
+/** Minimal .env loader (KEY=VALUE lines, # comments); never overrides variables already set. */
+function loadDotEnv(file: string): void {
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!m || line.trim().startsWith('#')) continue;
+    const value = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+  }
+}
+
+/** Turns SDK credential failures into something a person can act on. */
+function describeCredentialError(err: unknown, source: string): string {
+  const name = (err as { name?: string })?.name ?? '';
+  const message = err instanceof Error ? err.message : String(err);
+  const profile = source.startsWith('profile:') ? source.slice('profile:'.length) : source;
+  if (/InvalidClientTokenId|UnrecognizedClientException|InvalidSignature|SignatureDoesNotMatch|AuthFailure/.test(name + message)) {
+    return `프로필 '${profile}'의 액세스 키가 유효하지 않습니다 (${name || 'InvalidClientTokenId'}). 상단에서 다른 프로필을 고르거나 'aws configure --profile ${profile}'로 키를 갱신하세요.`;
+  }
+  if (/ExpiredToken|TokenRefreshRequired|expired/i.test(name + message)) {
+    return `프로필 '${profile}'의 임시 자격증명이 만료되었습니다. 'aws sso login --profile ${profile}' 또는 자격증명 갱신 후 다시 시도하세요.`;
+  }
+  if (/CredentialsProviderError|Could not load credentials|ProfileNotFound|Profile .* not found/i.test(name + message)) {
+    return `프로필 '${profile}'의 자격증명을 찾을 수 없습니다. ~/.aws/credentials 또는 ~/.aws/config 설정을 확인하세요. (${message})`;
+  }
+  if (/AccessDenied/.test(name + message)) {
+    return `프로필 '${profile}'로 호출자 확인(sts:GetCallerIdentity)이 거부되었습니다. 읽기 권한이 있는 프로필을 선택하세요.`;
+  }
+  return `프로필 '${profile}'로 AWS에 연결하지 못했습니다: ${message}`;
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
+loadDotEnv(join(here, '..', '..', '.env'));
 // Deliberately not the generic PORT: dev-server launchers set PORT for the web app.
 const PORT = Number(process.env.ORRERY_PORT ?? 4820);
 const GRAPH_TTL = Number(process.env.ORRERY_GRAPH_TTL_MS ?? 10 * 60_000);
@@ -46,7 +79,13 @@ async function session(query: Record<string, unknown>): Promise<Session> {
     pending = (async () => {
       const clients = new ClientFactory(region, resolveCredentials(spec));
       const sts = clients.get(STSClient);
-      const id = await sts.send(new GetCallerIdentityCommand({}));
+      let id;
+      try {
+        id = await sts.send(new GetCallerIdentityCommand({}));
+      } catch (err) {
+        clients.destroy();
+        throw Object.assign(new Error(describeCredentialError(err, source)), { statusCode: 401 });
+      }
       return { spec, source, region, clients, account: id.Account ?? 'unknown', arn: id.Arn ?? '' };
     })();
     sessions.set(key, pending);
@@ -126,7 +165,7 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
     const graph = await collectGraph(s, send);
     send({ type: 'done', graph });
   } catch (err) {
-    send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    send({ type: 'error', message: err instanceof Error ? err.message : String(err), status: (err as { statusCode?: number }).statusCode });
   } finally {
     clearInterval(ping);
     raw.end();

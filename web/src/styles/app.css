@@ -222,7 +222,9 @@
 .load-card { width: 420px; max-width: calc(100% - 32px); padding: 20px 22px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius-l); box-shadow: var(--shadow-pop); }
 .load-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; color: var(--ink); }
 .load-title { font-weight: 650; font-size: 15px; }
-.load-sub { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.load-sub { color: var(--ink-3); font-size: 12px; margin-top: 2px; line-height: 1.5; word-break: keep-all; }
+.load-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.load-hint { color: var(--ink-3); font-size: 12px; }
 .load-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow: auto; }
 .load-item { display: flex; align-items: center; gap: 10px; height: 28px; padding: 0 6px; border-radius: 6px; color: var(--ink-3); animation: node-in 300ms var(--ease-out) both; animation-delay: calc(var(--i) * 30ms); }
 .load-item.ok { color: var(--ink); }

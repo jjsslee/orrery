@@ -25,7 +25,10 @@ export function LoadOverlay() {
           </div>
         </div>
         {loading.error ? (
-          <button type="button" className="btn primary" onClick={() => void load(true)}><RotateCw size={14} /> 다시 시도</button>
+          <div className="load-actions">
+            <button type="button" className="btn primary" onClick={() => void load(true)}><RotateCw size={14} /> 다시 시도</button>
+            <span className="load-hint">상단바에서 프로필이나 리전을 바꾸면 바로 다시 수집합니다.</span>
+          </div>
         ) : (
           <ul className="load-list">
             {order.map((c, i) => {

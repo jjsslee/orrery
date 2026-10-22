@@ -216,7 +216,7 @@ export type CollectEvent =
   | { type: 'start'; collectors: string[]; account: string; region: string }
   | { type: 'collector'; report: CollectorReport }
   | { type: 'done'; graph: ResourceGraph }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; status?: number };
 
 export const STATUS_LABEL: Record<Status, string> = {
   healthy: '정상',
