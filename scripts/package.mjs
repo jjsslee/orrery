@@ -12,6 +12,10 @@
  *    macOS binaries (Apple Silicon refuses to run unsigned code).
  * 4. Join the macOS binaries into one universal Orrery.app (Finder opens it
  *    like any app, no Terminal) and zip it and the Windows exe for handing out.
+ *
+ * release/ ends up with Orrery.app, Orrery-macos.zip, orrery-windows-x64.exe
+ * and orrery-windows-x64.zip; everything else stays in the hidden .work and
+ * .node folders.
  */
 import { build } from 'esbuild';
 import postject from 'postject';
@@ -204,8 +208,9 @@ const blobData = readFileSync(blob);
 const macBinaries = [];
 for (const t of targets) {
   console.log(t.name);
-  const exe = join(out, t.file);
   const macos = t.dist.startsWith('darwin');
+  // The per-arch macOS binaries only feed the universal Orrery.app, so they stay in the work folder.
+  const exe = join(macos ? work : out, t.file);
   rmSync(exe, { force: true });
   copyFileSync(await nodeRuntime(t.dist), exe);
   chmodSync(exe, 0o755);

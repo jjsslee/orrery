@@ -40,8 +40,17 @@ npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 
 ```
 
 - macOS에서 실행합니다(macOS 실행파일은 `codesign`으로 ad-hoc 서명해야 Apple Silicon에서 실행됨).
-- 전달할 파일은 `release/Orrery-macos.zip`(Apple Silicon·Intel 공용 `Orrery.app`)과 `release/orrery-windows-x64.zip`입니다. 크기는 대부분 Node 런타임입니다. `release/orrery-macos-arm64`·`orrery-macos-x64`는 앱을 만드는 중간 결과이자 터미널용 실행파일입니다.
-- 실행파일을 zip 없이 브라우저·메신저·클라우드 드라이브로 보내면 실행 권한이 빠져 Finder가 문서로 엽니다.
+- `release/`에는 네 개만 남습니다. 크기는 대부분 Node 런타임입니다.
+
+  | 파일 | 용도 |
+  |---|---|
+  | `Orrery.app` | 이 Mac에서 바로 실행·테스트 (Apple Silicon·Intel 공용) |
+  | `Orrery-macos.zip` | Mac 사용자에게 보내는 파일 |
+  | `orrery-windows-x64.exe` | Windows용 실행파일 (그대로 보내도 됨) |
+  | `orrery-windows-x64.zip` | 위 exe를 압축한 것. 더 작고 `.exe` 첨부를 막는 메일도 통과 |
+
+- Mac은 꼭 zip으로 보냅니다. `.app`은 폴더라 그대로 보낼 수 없고, 압축 없이 옮기면 실행 권한과 서명이 깨집니다.
+- 아키텍처별 macOS 실행파일(`orrery-macos-arm64`·`orrery-macos-x64`)과 번들·blob 같은 중간 결과는 숨김 폴더 `release/.work/`에, 받아 둔 Node 런타임은 `release/.node/`에 둡니다.
 - Apple Developer ID 서명·공증은 하지 않습니다. 그래서 받은 Mac에서 처음 열 때 Gatekeeper가 막으며, **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 한 번 거쳐야 합니다(또는 `xattr -dr com.apple.quarantine Orrery.app`). 앱은 응용 프로그램 폴더로 옮긴 뒤 여는 것을 권합니다.
 - 앱 아이콘은 `scripts/icon/orrery-app.svg`를 `rsvg-convert -w 1024 -h 1024`로 그린 `orrery-app-1024.png`에서 만듭니다.
 - `scripts/package.mjs`가 서버를 CommonJS 한 파일로 묶고, `web/dist`를 SEA 자산으로 넣은 blob을 공식 Node 런타임(`NODE_VERSION`, 현재 24 LTS)에 `postject`로 주입합니다. 런타임은 nodejs.org에서 한 번 받아 `release/.node/`에 두며 `SHASUMS256.txt`로 검증합니다. Node 버전을 올릴 때는 이 상수만 바꿉니다.
