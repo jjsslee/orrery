@@ -12,6 +12,7 @@ import { PlateNode, type PlateNodeType } from './nodes/PlateNode';
 import { AggregateNode, type AggregateNodeType } from './nodes/AggregateNode';
 import { FlowEdge, type FlowEdgeType } from './edges/FlowEdge';
 import { CanvasToolbar } from './CanvasToolbar';
+import { HoverCard, type HoverAnchor } from './HoverCard';
 import { CATEGORY_ORDER, TYPE_META } from '../model/types';
 import type { ResourceType } from '@orrery/shared';
 
@@ -151,8 +152,8 @@ function TopologyInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, placed?.key]);
 
-  const { nodes, edges } = useMemo(() => {
-    if (!scene || !placed) return { nodes: [] as AnyNode[], edges: [] as FlowEdgeType[] };
+  const { nodes, edges, drawn } = useMemo(() => {
+    if (!scene || !placed) return { nodes: [] as AnyNode[], edges: [] as FlowEdgeType[], drawn: undefined };
     // While a new structure is being laid out, keep drawing the scene the placements belong to.
     const drawn = placed.key === structureKey ? scene : placed.scene;
     const childCount = new Map<string, number>();
@@ -176,24 +177,42 @@ function TopologyInner() {
     const focus = selectedId ?? hoverId;
     const edges: FlowEdgeType[] = drawn.edges.map((e) => {
       const highlight = Boolean(focus && (e.source === focus || e.target === focus));
+      // Mid-line labels only for the selected node; hovering shows the HoverCard instead.
+      const labeled = Boolean(selectedId && (e.source === selectedId || e.target === selectedId));
       const color = e.status === 'critical' ? 'var(--status-critical)' : e.status === 'warning' ? 'var(--status-warning)' : highlight ? 'var(--ink-2)' : 'var(--line-strong)';
       return {
         id: e.id, source: e.source, target: e.target, type: 'flow', zIndex: highlight ? 2 : 1,
-        data: { ...e, highlight, showTraffic: overlays.traffic, hasMetrics },
+        data: { ...e, highlight, labeled, showTraffic: overlays.traffic, hasMetrics },
         markerEnd: DIRECTIONAL.has(e.kind) ? { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } : undefined,
       };
     });
-    return { nodes, edges };
+    return { nodes, edges, drawn };
   }, [scene, placed, structureKey, selectedId, hoverId, metrics, overlays.traffic, changed]);
 
+  // Hover card: shown after a short rest on a node so sweeping across the map does not flicker.
+  const [card, setCard] = useState<{ anchor: HoverAnchor; bounds: { width: number; height: number } }>();
+  const cardTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hideCard = useCallback(() => { clearTimeout(cardTimer.current); setCard(undefined); }, []);
+
   const onNodeClick = useCallback<NodeMouseHandler<Node>>((_, node) => {
+    hideCard();
     if (node.type === 'aggregate') { toggleExpanded(node.id); return; }
     if (node.type === 'plate') return;
     select(node.id === selectedId ? undefined : node.id);
-  }, [select, selectedId, toggleExpanded]);
+  }, [select, selectedId, toggleExpanded, hideCard]);
 
-  const onNodeEnter = useCallback<NodeMouseHandler<Node>>((_, node) => { if (node.type !== 'plate') hover(node.id); }, [hover]);
-  const onNodeLeave = useCallback(() => hover(undefined), [hover]);
+  const onNodeEnter = useCallback<NodeMouseHandler<Node>>((event, node) => {
+    if (node.type === 'plate') return;
+    hover(node.id);
+    const el = event.currentTarget as HTMLElement; // React clears currentTarget once the handler returns
+    clearTimeout(cardTimer.current);
+    cardTimer.current = setTimeout(() => {
+      const box = container.current?.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (box) setCard({ anchor: { id: node.id, x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }, bounds: { width: box.width, height: box.height } });
+    }, 280);
+  }, [hover]);
+  const onNodeLeave = useCallback(() => { hideCard(); hover(undefined); }, [hover, hideCard]);
 
   return (
     <div className={`topology ${laying ? 'laying' : ''}`} ref={container}>
@@ -206,6 +225,7 @@ function TopologyInner() {
         onNodeMouseEnter={onNodeEnter}
         onNodeMouseLeave={onNodeLeave}
         onPaneClick={() => select(undefined)}
+        onMoveStart={hideCard}
         minZoom={0.04}
         maxZoom={2.2}
         nodesConnectable={false}
@@ -242,6 +262,7 @@ function TopologyInner() {
           </div>
         </div>
       )}
+      {card && drawn && <HoverCard anchor={card.anchor} scene={drawn} bounds={card.bounds} />}
       <CanvasToolbar scene={scene} laying={laying} />
     </div>
   );

@@ -3,7 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps, type Edge }
 import type { SceneEdge } from '../../layout/scene';
 import { EDGE_KIND_LABEL } from '../../model/types';
 
-export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { highlight: boolean; showTraffic: boolean; hasMetrics: boolean };
+export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { highlight: boolean; labeled: boolean; showTraffic: boolean; hasMetrics: boolean };
 export type FlowEdgeType = Edge<FlowEdgeData, 'flow'>;
 
 const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -29,11 +29,12 @@ function FlowEdgeImpl({ id, sourceX, sourceY, targetX, targetY, sourcePosition, 
           ))}
         </g>
       )}
-      {highlight && (
+      {data.labeled && (
         <EdgeLabelRenderer>
           <div className="fedge-label" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
             <span className="fedge-kind">{EDGE_KIND_LABEL[kind] ?? kind}</span>
-            {label && <span className="fedge-text">{label}</span>}
+            {/* Short details (ports, "3개 라우트") only: long ones would cover nearby nodes; the HoverCard and Inspector show them. */}
+            {label && label.length <= 14 && <span className="fedge-text">{label}</span>}
             {count > 1 && <span className="fedge-count tnum">×{count}</span>}
           </div>
         </EdgeLabelRenderer>

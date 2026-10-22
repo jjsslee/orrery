@@ -96,7 +96,10 @@ export function Rail() {
               </label>
               {(filtered || query || tagFilters.length > 0) && <button type="button" className="link-btn" onClick={resetFilters}>초기화</button>}
             </div>
-            <div className="rail-hint">체크한 유형만 지도에 남습니다. 전체를 끄고 몇 가지만 고르면 그것들만 펼쳐서 보고, VPC·서브넷은 자리 표시용으로 남습니다. Option/Alt+클릭은 그 하나만 고릅니다.</div>
+            <div className="rail-hint">
+              <p>체크한 유형만 지도에 남습니다. 3종 이하로 좁히면 접지 않고 모두 펼칩니다.</p>
+              <p><kbd>{/Mac/i.test(navigator.platform) ? '⌥ Option' : 'Alt'}</kbd> + 클릭: 그 유형만 보기</p>
+            </div>
             {CATEGORY_ORDER.map((c) => {
               const types = TYPES_BY_CATEGORY[c].filter((t) => (counts.byType.get(t) ?? 0) > 0);
               if (!types.length) return null;

@@ -66,8 +66,9 @@ export interface SceneInput {
   traffic?: Record<string, number>;
 }
 
-export const NODE_W = 212;
-export const NODE_H = 58;
+// Room for a name on two lines (see components/fitName.ts).
+export const NODE_W = 228;
+export const NODE_H = 66;
 export const AGG_H = 50;
 const GROUP_THRESHOLD = 6;
 /** Hub-like types are never folded while they have relationships: folding them hides the shape of the system. */

@@ -13,7 +13,7 @@ function AggregateNodeImpl({ data, selected }: NodeProps<AggregateNodeType>) {
   for (const m of data.members) counts[m.status] = (counts[m.status] ?? 0) + 1;
   const category = TYPE_META[data.type].category;
   return (
-    <div className={`rnode agg cat-${category} ${data.dim ? 'dim' : ''} ${selected ? 'selected' : ''}`} style={{ '--i': data.index } as React.CSSProperties} title="클릭해서 펼치기">
+    <div className={`rnode agg cat-${category} ${data.dim ? 'dim' : ''} ${selected ? 'selected' : ''}`} style={{ '--i': data.index } as React.CSSProperties}>
       <Handle type="target" position={Position.Left} className="rf-handle" isConnectable={false} />
       <div className="rnode-icon stack"><TypeIcon type={data.type} size={16} /></div>
       <div className="rnode-body">

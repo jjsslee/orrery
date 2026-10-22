@@ -56,7 +56,8 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- top bar ---------- */
-.topbar { display: flex; align-items: center; gap: 16px; padding: 0 14px 0 18px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; overflow: hidden; }
+/* Clip only sideways (narrow windows); dropdown lists hang below the bar. clip, unlike hidden, leaves the other axis visible. */
+.topbar { display: flex; align-items: center; gap: 16px; padding: 0 14px 0 18px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; overflow-x: clip; overflow-y: visible; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); min-width: 0; flex: none; }
 .brand-name { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
 .brand-tag { color: var(--ink-3); font-size: 12px; }
@@ -101,7 +102,10 @@
 .rail-row { display: flex; align-items: center; gap: 2px; }
 .rail-row > .rail-cat-head { flex: 1; min-width: 0; }
 .rail-all { margin-bottom: 2px; }
-.rail-hint { color: var(--ink-4); font-size: 11px; line-height: 1.45; padding: 0 8px 6px; }
+.rail-hint { color: var(--ink-2); font-size: 12px; line-height: 1.6; padding: 0 8px 8px; word-break: keep-all; }
+.rail-hint p { margin: 0; }
+.rail-hint p + p { margin-top: 4px; }
+.rail-hint kbd { font: 500 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; color: var(--ink); background: var(--panel-2); }
 .rail-tree input[type='checkbox'] { width: 14px; height: 14px; margin: 0; accent-color: var(--pulse); flex: none; cursor: pointer; }
 .rail-cat-head { cursor: pointer; user-select: none; }
 .rail-type { cursor: pointer; user-select: none; }
@@ -169,6 +173,9 @@
 .rnode-icon.stack { box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--cat) 25%, transparent), 4px 4px 0 0 color-mix(in srgb, var(--cat) 12%, transparent); }
 .rnode-body { flex: 1; min-width: 0; }
 .rnode-name { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+/* Lines come from fitName(); the per-line ellipsis only guards against font metrics differing from the measurement. */
+.rnode-name > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.rnode-name + .rnode-sub { margin-top: 2px; }
 .rnode-sub { display: flex; gap: 6px; align-items: baseline; color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .rnode-type { color: var(--cat); font-weight: 500; }
 .rnode-kv { overflow: hidden; text-overflow: ellipsis; }
@@ -199,9 +206,30 @@
 .fedge.idle { stroke-dasharray: 7 9; animation: drift 2.4s linear infinite; }
 @keyframes drift { to { stroke-dashoffset: -32; } }
 .fedge-particle { fill: var(--pulse); filter: drop-shadow(0 0 3px var(--pulse-soft)); }
-.fedge-label { position: absolute; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line-strong); font-size: 11px; color: var(--ink-2); pointer-events: none; box-shadow: var(--shadow-pop); white-space: nowrap; }
-.fedge-kind { color: var(--ink); font-weight: 600; }
-.fedge-count { color: var(--ink-3); }
+/* Labels of the selected node's lines sit above the nodes and lines (both raised past z 1000 on selection). */
+.react-flow__edgelabel-renderer { z-index: 2000; }
+.fedge-label { position: absolute; display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 9px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line-strong); font-size: 11.5px; color: var(--ink); pointer-events: none; box-shadow: var(--shadow-pop); white-space: nowrap; }
+.fedge-kind { color: var(--ink); font-weight: 600; flex: none; }
+.fedge-text { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+.fedge-count { color: var(--ink-2); flex: none; }
+
+/* hover card */
+.hover-card { position: absolute; z-index: 15; padding: 11px 13px 10px; border-radius: var(--radius-m); background: var(--panel); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); font-size: 12px; color: var(--ink-2); pointer-events: none; animation: fade 120ms; }
+.hc-name { color: var(--ink); font-weight: 650; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.hc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; }
+.hc-type { font-weight: 600; }
+.hc-status { display: inline-flex; align-items: center; gap: 5px; }
+.hc-alarm { margin-top: 6px; color: var(--status-critical); font-weight: 600; }
+.hc-note { margin-top: 6px; color: var(--ink-3); line-height: 1.45; }
+.hc-rels { list-style: none; margin: 9px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 7px; }
+.hc-rels li { min-width: 0; line-height: 1.4; }
+.hc-rel { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.hc-rels li.st-critical .hc-kind, .hc-rels li.st-warning .hc-kind { color: var(--st); }
+.hc-kind { flex: none; color: var(--ink); font-weight: 600; }
+.hc-dir { flex: none; color: var(--ink-3); }
+.hc-other { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.hc-detail { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); font-family: var(--font-mono); font-size: 11px; }
+.hc-foot { margin-top: 8px; color: var(--ink-3); font-size: 11.5px; }
 
 /* toolbar */
 .canvas-toolbar { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; white-space: nowrap; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); z-index: 5; }
