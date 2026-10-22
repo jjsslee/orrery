@@ -36,6 +36,7 @@ function TopologyInner() {
   const selectedId = useStore((s) => s.selectedId);
   const hoverId = useStore((s) => s.hoverId);
   const fitRequest = useStore((s) => s.fitRequest);
+  const locateRequest = useStore((s) => s.locateRequest);
   const changed = useStore((s) => s.changed);
   const select = useStore((s) => s.select);
   const hover = useStore((s) => s.hover);
@@ -113,15 +114,34 @@ function TopologyInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitRequest]);
 
-  // Reveal the selected node only when it sits outside the current viewport
+  // Explicit "지도에서 보기": zoom onto the node once the layout that contains it has landed
   const container = useRef<HTMLDivElement>(null);
+  const handledLocate = useRef(0);
+  const absoluteBounds = useCallback((id: string) => {
+    const internal = rf.getInternalNode(id);
+    if (!internal) return undefined;
+    const p = internal.internals.positionAbsolute;
+    return { x: p.x, y: p.y, width: internal.measured.width ?? internal.width ?? 0, height: internal.measured.height ?? internal.height ?? 0 };
+  }, [rf]);
+
+  useEffect(() => {
+    if (!locateRequest || !placed || handledLocate.current === locateRequest.seq) return;
+    if (!rf.getNode(locateRequest.id)) return; // not in this layout yet; try again when placements change
+    handledLocate.current = locateRequest.seq;
+    pendingFit.current = null; // the locate zoom wins over a pending fit-to-view
+    const t = setTimeout(() => {
+      const b = absoluteBounds(locateRequest.id);
+      if (b) void rf.setCenter(b.x + b.width / 2, b.y + b.height / 2, { zoom: 1.1, duration: 550 });
+    }, 160);
+    return () => clearTimeout(t);
+  }, [locateRequest, placed, rf, absoluteBounds]);
   useEffect(() => {
     if (!selectedId || !placed) return;
     const t = setTimeout(() => {
-      const node = rf.getNode(selectedId);
+      if (locateRequest && handledLocate.current !== locateRequest.seq) return; // locate will position the view
       const el = container.current;
-      if (!node || !el) return;
-      const b = rf.getNodesBounds([node]);
+      const b = absoluteBounds(selectedId);
+      if (!b || !el) return;
       const vp = rf.getViewport();
       const view = { x: -vp.x / vp.zoom, y: -vp.y / vp.zoom, w: el.clientWidth / vp.zoom, h: el.clientHeight / vp.zoom };
       const inside = b.x >= view.x && b.y >= view.y && b.x + b.width <= view.x + view.w && b.y + b.height <= view.y + view.h;
@@ -149,7 +169,7 @@ function TopologyInner() {
         const node: AggregateNodeType = { ...base, type: 'aggregate', width: n.width, height: n.height, style: { width: n.width, height: n.height }, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
         return node;
       }
-      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0, changed: Boolean(changed[n.id]) } };
+      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0, changed: Boolean(changed[n.id]), ghost: Boolean(n.ghost) } };
       return node;
     });
     const hasMetrics = Boolean(metrics && Object.keys(metrics.traffic).length);

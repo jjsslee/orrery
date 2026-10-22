@@ -18,6 +18,8 @@ export interface SceneNode {
   traffic: number;
   width: number;
   height: number;
+  /** Hidden by a filter but shown faintly because it neighbours the selected node */
+  ghost?: boolean;
 }
 
 export interface SceneEdge {
@@ -32,6 +34,8 @@ export interface SceneEdge {
   dim: boolean;
   /** How many raw edges were folded into this one */
   count: number;
+  /** Connects the selected node to a ghost neighbour */
+  ghost?: boolean;
 }
 
 export interface Scene {
@@ -97,12 +101,33 @@ export function buildScene(input: SceneInput): Scene {
   const { graph, overlays, expanded, selectedId } = input;
   const q = input.query.trim().toLowerCase();
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  // 0. edges with target groups folded unless shown (LB → TG → target becomes LB → target)
+  const rawEdges: ResourceEdge[] = [];
+  if (!overlays.targetGroups) {
+    const tgIn = new Map<string, ResourceEdge[]>(); // tg → lb edges
+    const tgOut = new Map<string, ResourceEdge[]>(); // tg → target edges
+    for (const e of graph.edges) {
+      const s = byId.get(e.source), t = byId.get(e.target);
+      if (t?.type === 'target-group' && e.kind === 'targets') tgIn.set(e.target, [...(tgIn.get(e.target) ?? []), e]);
+      else if (s?.type === 'target-group' && e.kind === 'targets') tgOut.set(e.source, [...(tgOut.get(e.source) ?? []), e]);
+      else if (s?.type !== 'target-group' && t?.type !== 'target-group') rawEdges.push(e);
+    }
+    for (const [tgId, ins] of tgIn) {
+      const tg = byId.get(tgId);
+      for (const inE of ins) for (const outE of tgOut.get(tgId) ?? []) {
+        rawEdges.push({ id: `targets|${inE.source}|${outE.target}|${tgId}`, source: inE.source, target: outE.target, kind: 'targets', label: tg?.name, status: outE.status, props: outE.props });
+      }
+    }
+  } else {
+    rawEdges.push(...graph.edges);
+  }
   const adjacency = new Map<string, Set<string>>();
   const touch = (a: string, b: string) => {
     if (!adjacency.has(a)) adjacency.set(a, new Set());
     adjacency.get(a)!.add(b);
   };
-  for (const e of graph.edges) { touch(e.source, e.target); touch(e.target, e.source); }
+  for (const e of rawEdges) { touch(e.source, e.target); touch(e.target, e.source); }
 
   // 1. type/category/overlay visibility
   let visible = new Set<string>();
@@ -136,32 +161,34 @@ export function buildScene(input: SceneInput): Scene {
   if (q) narrow((n) => matches(n, q), true);
   if (tagFilters.length && q) for (const id of [...matched]) if (!visible.has(id)) matched.delete(id);
 
-  // 3. edges between visible nodes, with target groups folded unless shown
-  const rawEdges: ResourceEdge[] = [];
-  if (!overlays.targetGroups) {
-    const tgIn = new Map<string, ResourceEdge[]>(); // tg → lb edges
-    const tgOut = new Map<string, ResourceEdge[]>(); // tg → target edges
-    for (const e of graph.edges) {
-      const s = byId.get(e.source), t = byId.get(e.target);
-      if (t?.type === 'target-group' && e.kind === 'targets') tgIn.set(e.target, [...(tgIn.get(e.target) ?? []), e]);
-      else if (s?.type === 'target-group' && e.kind === 'targets') tgOut.set(e.source, [...(tgOut.get(e.source) ?? []), e]);
-      else if (s?.type !== 'target-group' && t?.type !== 'target-group') rawEdges.push(e);
+  // 2b. the selected node is always on the map, and its hidden neighbours appear as ghosts
+  const ghosts = new Set<string>();
+  const withAncestors = (id: string) => {
+    let cur: ResourceNode | undefined = byId.get(id);
+    while (cur) { visible.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
+  };
+  if (selectedId && byId.has(selectedId)) {
+    if (!visible.has(selectedId)) withAncestors(selectedId);
+    for (const nb of adjacency.get(selectedId) ?? []) {
+      const n = byId.get(nb);
+      if (!n || visible.has(nb) || n.type === 'target-group') continue;
+      ghosts.add(nb);
+      withAncestors(nb);
     }
-    for (const [tgId, ins] of tgIn) {
-      const tg = byId.get(tgId);
-      for (const inE of ins) for (const outE of tgOut.get(tgId) ?? []) {
-        rawEdges.push({ id: `targets|${inE.source}|${outE.target}|${tgId}`, source: inE.source, target: outE.target, kind: 'targets', label: tg?.name, status: outE.status, props: outE.props });
-      }
-    }
-  } else {
-    rawEdges.push(...graph.edges);
   }
-  const edges = rawEdges.filter((e) => visible.has(e.source) && visible.has(e.target));
+
+  // 3. edges between visible nodes; a ghost only connects to the selected node
+  const edges = rawEdges.filter((e) => {
+    if (!visible.has(e.source) || !visible.has(e.target)) return false;
+    if (ghosts.has(e.source)) return e.target === selectedId;
+    if (ghosts.has(e.target)) return e.source === selectedId;
+    return true;
+  });
   const connected = new Set<string>();
   for (const e of edges) { connected.add(e.source); connected.add(e.target); }
 
   // 4. neighbours of the selection (and isolated types) stay individual
-  const pinned = new Set<string>(matched);
+  const pinned = new Set<string>([...matched, ...ghosts]);
   if (input.noFoldTypes?.size) for (const id of visible) { const n = byId.get(id)!; if (input.noFoldTypes.has(n.type)) pinned.add(n.id); }
   if (selectedId) {
     pinned.add(selectedId);
@@ -188,7 +215,7 @@ export function buildScene(input: SceneInput): Scene {
   const lanesUsed = new Set<Category>();
 
   const addResource = (n: ResourceNode, parentId: string | undefined, depth: number) => {
-    sceneNodes.set(n.id, { id: n.id, kind: 'resource', parentId, node: n, depth, dim: false, traffic: trafficOf(n.id), width: NODE_W, height: NODE_H });
+    sceneNodes.set(n.id, { id: n.id, kind: 'resource', parentId, node: n, depth, dim: false, traffic: trafficOf(n.id), width: NODE_W, height: NODE_H, ghost: ghosts.has(n.id) || undefined });
   };
 
   const placeChildren = (parentKey: string, parentId: string | undefined, depth: number, isLane: boolean) => {
@@ -284,7 +311,7 @@ export function buildScene(input: SceneInput): Scene {
       if (e.status && (!existing.status || STATUS_RANK[e.status] > STATUS_RANK[existing.status])) existing.status = e.status;
       if (existing.label && e.label && existing.label !== e.label && !existing.label.includes(e.label)) existing.label = `${existing.label}, ${e.label}`.slice(0, 60);
     } else {
-      sceneEdges.set(key, { id: key, source: s, target: t, kind: e.kind, label: e.label, status: e.status, traffic, live, dim: false, count: 1 });
+      sceneEdges.set(key, { id: key, source: s, target: t, kind: e.kind, label: e.label, status: e.status, traffic, live, dim: false, count: 1, ghost: ghosts.has(e.source) || ghosts.has(e.target) || undefined });
     }
   }
 

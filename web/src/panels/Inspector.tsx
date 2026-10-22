@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Bell, Copy, Check, Table as TableIcon, LineChart, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bell, Copy, Check, Table as TableIcon, LineChart, LocateFixed, X } from 'lucide-react';
 import type { EdgeKind, ResourceNode, ResourceEdge } from '@orrery/shared';
 import { STATUS_LABEL } from '@orrery/shared';
 import { useStore } from '../model/store';
@@ -15,8 +15,8 @@ export function Inspector() {
   const metrics = useStore((s) => s.metrics);
   const metricsLoading = useStore((s) => s.metricsLoading);
   const select = useStore((s) => s.select);
-  const setView = useStore((s) => s.setView);
   const addTagFilter = useStore((s) => s.addTagFilter);
+  const locate = useStore((s) => s.locate);
   const [copied, setCopied] = useState(false);
   const [tableView, setTableView] = useState(false);
 
@@ -123,13 +123,16 @@ export function Inspector() {
                 <ul className="rel-list">
                   {list.slice(0, 40).map(({ edge, other, outgoing }) => (
                     <li key={edge.id}>
-                      <button type="button" className="rel-item" onClick={() => select(other.id, { reveal: true })}>
-                        {outgoing ? <ArrowRight size={12} className="rel-dir" /> : <ArrowLeft size={12} className="rel-dir" />}
-                        <span className={`rel-icon cat-${other.category}`}><TypeIcon type={other.type} size={12} /></span>
-                        <span className="rel-name" title={other.name}>{other.name}</span>
-                        {edge.label && <span className="rel-label">{edge.label}</span>}
-                        {edge.status && edge.status !== 'healthy' && <StatusDot status={edge.status} size={6} />}
-                      </button>
+                      <div className="rel-row">
+                        <button type="button" className="rel-item" onClick={() => select(other.id, { reveal: true })}>
+                          {outgoing ? <ArrowRight size={12} className="rel-dir" /> : <ArrowLeft size={12} className="rel-dir" />}
+                          <span className={`rel-icon cat-${other.category}`}><TypeIcon type={other.type} size={12} /></span>
+                          <span className="rel-name" title={other.name}>{other.name}</span>
+                          {edge.label && <span className="rel-label">{edge.label}</span>}
+                          {edge.status && edge.status !== 'healthy' && <StatusDot status={edge.status} size={6} />}
+                        </button>
+                        <button type="button" className="rel-locate" title="지도에서 보기" aria-label={`${other.name} 지도에서 보기`} onClick={() => locate(other.id)}><LocateFixed size={12} /></button>
+                      </div>
                     </li>
                   ))}
                   {list.length > 40 && <li className="muted">외 {list.length - 40}개</li>}
@@ -173,7 +176,7 @@ export function Inspector() {
         )}
 
         <div className="insp-actions">
-          <button type="button" className="btn" onClick={() => { setView('topology'); select(node.id, { reveal: true }); }}>토폴로지에서 보기</button>
+          <button type="button" className="btn" onClick={() => locate(node.id)}><LocateFixed size={14} /> 지도에서 보기</button>
         </div>
       </div>
     </aside>

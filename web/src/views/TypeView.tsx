@@ -6,7 +6,7 @@ import { CATEGORY_ORDER, STATUS_ORDER, TYPES_BY_CATEGORY, TYPE_META } from '../m
 import { TypeIcon } from '../components/TypeIcon';
 import { StatusDot } from '../components/StatusDot';
 import { fmtNumber, fmtProp, fmtRelative } from '../components/format';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, LocateFixed } from 'lucide-react';
 import { matchesTags } from '../model/tags';
 
 const PAGE = 24;
@@ -27,6 +27,7 @@ export function TypeView() {
   const tagFilters = useStore((s) => s.tagFilters);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
+  const locate = useStore((s) => s.locate);
   const [pages, setPages] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'traffic'>('status');
 
@@ -112,7 +113,13 @@ export function TypeView() {
                         const keyVal = meta.keyProp ? n.props[meta.keyProp] : undefined;
                         return (
                           <tr key={n.id} className={n.id === selectedId ? 'selected' : ''} onClick={() => select(n.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') select(n.id); }}>
-                            <td className="tv-name"><span className="tv-name-text" title={n.name}>{n.name}</span>{n.alarms?.length ? <span className="rnode-alarm">{n.alarms.length}</span> : null}</td>
+                            <td className="tv-name">
+                              <span className="tv-name-text" title={n.name}>{n.name}</span>
+                              {n.alarms?.length ? <span className="rnode-alarm">{n.alarms.length}</span> : null}
+                              <button type="button" className="tv-locate" title="지도에서 보기" aria-label={`${n.name} 지도에서 보기`} onClick={(e) => { e.stopPropagation(); locate(n.id); }}>
+                                <LocateFixed size={13} />
+                              </button>
+                            </td>
                             <td className="mono tv-id" title={n.arn ?? n.nativeId}>{n.nativeId.length > 36 ? `…${n.nativeId.slice(-34)}` : n.nativeId}</td>
                             <td><StatusDot status={n.status} showLabel label={n.statusLabel ?? undefined} /></td>
                             <td className="tv-prop">{keyVal != null ? fmtProp(keyVal) : '–'}</td>

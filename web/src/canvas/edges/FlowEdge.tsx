@@ -16,7 +16,7 @@ function FlowEdgeImpl({ id, sourceX, sourceY, targetX, targetY, sourcePosition, 
   const particles = animated && traffic > 0 ? 1 + Math.round(traffic * 3) : 0;
   const dur = 4.2 - traffic * 2.8;
   const idle = animated && traffic === 0 && !hasMetrics;
-  const cls = `fedge k-${kind} ${live ? 'live' : ''} ${dim ? 'dim' : ''} ${highlight ? 'hl' : ''} ${status ? `st-${status}` : ''} ${idle ? 'idle' : ''}`;
+  const cls = `fedge k-${kind} ${live ? 'live' : ''} ${dim ? 'dim' : ''} ${highlight ? 'hl' : ''} ${status ? `st-${status}` : ''} ${idle ? 'idle' : ''} ${data.ghost ? 'ghost' : ''}`;
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} className={cls} interactionWidth={14} />

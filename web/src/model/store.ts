@@ -55,6 +55,8 @@ export interface AppState {
   expanded: Set<string>;
   /** Monotonic counter: bump to ask the canvas to fit the view */
   fitRequest: number;
+  /** Ask the canvas to zoom onto one node (set by locate()) */
+  locateRequest?: { id: string; seq: number };
   railTab: 'types' | 'tags';
   /** Live mode: periodic status passes (free calls) and silent full re-collects; metrics stay manual */
   live: boolean;
@@ -77,6 +79,8 @@ export interface AppState {
   loadMetrics(refresh?: boolean): Promise<void>;
   setView(v: ViewMode): void;
   select(id?: string, opts?: { reveal?: boolean }): void;
+  /** Switch to the topology, select the node and zoom onto it */
+  locate(id: string): void;
   hover(id?: string): void;
   setQuery(q: string): void;
   toggleCategory(c: Category): void;
@@ -234,6 +238,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (node) set((s) => ({ expanded: new Set([...s.expanded, aggregateKeyFor(node)]) }));
     }
   },
+  locate: (id) => set((s) => ({ view: 'topology', selectedId: id, locateRequest: { id, seq: (s.locateRequest?.seq ?? 0) + 1 } })),
   hover: (hoverId) => set({ hoverId }),
   setQuery: (query) => set({ query }),
   // A category checkbox is the union of its types: any visible → hide all, none visible → show all.

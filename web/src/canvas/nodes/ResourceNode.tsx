@@ -6,7 +6,7 @@ import { TypeIcon } from '../../components/TypeIcon';
 import { StatusDot } from '../../components/StatusDot';
 import { fmtProp } from '../../components/format';
 
-export type ResourceNodeData = { node: RNode; dim: boolean; traffic: number; depth: number; index: number; alarms: number; changed?: boolean };
+export type ResourceNodeData = { node: RNode; dim: boolean; traffic: number; depth: number; index: number; alarms: number; changed?: boolean; ghost?: boolean };
 export type ResourceNodeType = Node<ResourceNodeData, 'resource'>;
 
 function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
@@ -15,7 +15,8 @@ function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
   const keyProp = meta.keyProp ? node.props[meta.keyProp] : undefined;
   return (
     <div
-      className={`rnode cat-${node.category} st-${node.status} ${dim ? 'dim' : ''} ${selected ? 'selected' : ''} ${data.changed ? 'changed' : ''}`}
+      className={`rnode cat-${node.category} st-${node.status} ${dim ? 'dim' : ''} ${selected ? 'selected' : ''} ${data.changed ? 'changed' : ''} ${data.ghost ? 'ghost' : ''}`}
+      title={data.ghost ? `${node.name} · 필터에 가려진 유형이지만 선택한 자원과 연결되어 있어 표시합니다` : undefined}
       style={{ '--i': index } as React.CSSProperties}
       data-type={node.type}
     >
@@ -29,6 +30,7 @@ function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
         </div>
       </div>
       <div className="rnode-status">
+        {data.ghost && <span className="rnode-ghost-tag">숨김</span>}
         {data.alarms > 0 && <span className="rnode-alarm" title={`경보 ${data.alarms}건`}>{data.alarms}</span>}
         <StatusDot status={node.status} label={node.statusLabel} />
       </div>
