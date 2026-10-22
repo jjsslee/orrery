@@ -46,10 +46,11 @@ export function TopBar() {
         <Dropdown
           label="리전"
           value={region}
+          placeholder="리전 선택"
           onChange={(v) => void setRegion(v)}
           mono
           width={168}
-          options={(regions.length ? regions : [region]).map((r) => ({ value: r, label: r }))}
+          options={(regions.length ? regions : region ? [region] : []).map((r) => ({ value: r, label: r }))}
         />
         <div className="identity" title={identity?.arn ?? ''}>
           {identity ? <span className="mono">{maskAccount(identity.account)}</span> : <span className="muted">계정 확인 중</span>}

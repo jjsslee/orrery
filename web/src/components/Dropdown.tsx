@@ -8,13 +8,14 @@ interface Props {
   options: DropdownOption[];
   onChange(v: string): void;
   label: string;
+  placeholder?: string;
   prefix?: ReactNode;
   width?: number;
   mono?: boolean;
 }
 
 /** Accessible listbox dropdown: button + popup, arrow keys, Escape, click-outside. */
-export function Dropdown({ value, options, onChange, label, prefix, width, mono }: Props) {
+export function Dropdown({ value, options, onChange, label, placeholder, prefix, width, mono }: Props) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -46,7 +47,7 @@ export function Dropdown({ value, options, onChange, label, prefix, width, mono 
         }}
       >
         {prefix && <span className="dd-prefix">{prefix}</span>}
-        <span className="dd-value">{current?.label ?? value}</span>
+        <span className={`dd-value ${!current && !value ? 'dd-placeholder' : ''}`}>{current?.label ?? (value || placeholder)}</span>
         <ChevronDown size={14} className="dd-chev" aria-hidden />
       </button>
       {open && (

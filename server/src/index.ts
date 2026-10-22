@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
-import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
@@ -13,6 +13,8 @@ import { collectorLabels, runCollectors } from './collectors/index.ts';
 import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
+import { rejectNonLocal } from './http/local-only.ts';
+import { embeddedWeb, openBrowser, orreryAt, packaged, portFree, userDataDir } from './runtime.ts';
 import { readFileSync } from 'node:fs';
 
 /** Minimal .env loader (KEY=VALUE lines, # comments); never overrides variables already set. */
@@ -47,15 +49,23 @@ function describeCredentialError(err: unknown, source: string): string {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-loadDotEnv(join(here, '..', '..', '.env'));
+// The packaged app is configured by environment variables only; there is no repo next to it.
+if (!packaged) loadDotEnv(join(here, '..', '..', '.env'));
 // Deliberately not the generic PORT: dev-server launchers set PORT for the web app.
 const PORT = Number(process.env.ORRERY_PORT ?? 4820);
 const GRAPH_TTL = Number(process.env.ORRERY_GRAPH_TTL_MS ?? 10 * 60_000);
 const METRICS_TTL = Number(process.env.ORRERY_METRICS_TTL_MS ?? 60_000);
 
-const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
-await app.register(cors, { origin: true });
-const cache = new Cache(join(here, '..', '..', '.orrery-cache'));
+// Packaged, the log goes to the console window a person is looking at: warnings only.
+const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info') } });
+app.addHook('onRequest', async (req, reply) => {
+  const reason = rejectNonLocal(req.url, req.headers);
+  if (reason) {
+    req.log.warn({ host: req.headers.host, site: req.headers['sec-fetch-site'] }, reason);
+    return reply.status(403).send({ error: reason });
+  }
+});
+const cache = new Cache(packaged ? join(userDataDir(), 'cache') : join(here, '..', '..', '.orrery-cache'));
 
 interface Session {
   spec: ReturnType<typeof sourceFromQuery>;
@@ -147,7 +157,6 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
   });
   const send = (e: CollectEvent) => raw.write(`data: ${JSON.stringify(e)}\n\n`);
   // A real event (not an SSE comment) so the client can detect a dead stream.
@@ -235,17 +244,55 @@ app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
   reply.status(err.statusCode ?? 500).send({ error: err.message || '알 수 없는 오류' });
 });
 
-// Production: serve the built web app
+// Production: serve the built web app, embedded in the packaged executable or from web/dist after `npm run build`
 const dist = join(here, '..', '..', 'web', 'dist');
-if (existsSync(dist)) {
-  await app.register(fastifyStatic, { root: dist, wildcard: false });
+if (packaged) {
+  const files = embeddedWeb();
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not found' });
+    const file = files.get(req.url.split('?')[0]) ?? files.get('/index.html');
+    if (!file) return reply.status(404).send({ error: 'not found' });
+    return reply.type(file.type).send(file.body);
+  });
+} else if (existsSync(dist)) {
+  app.register(fastifyStatic, { root: dist, wildcard: false });
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not found' });
     return reply.sendFile('index.html');
   });
 }
 
-await app.listen({ port: PORT, host: '127.0.0.1' });
+function announce(url: string, message: string): void {
+  console.log(`${message}: ${url}`);
+  if (process.env.ORRERY_NO_OPEN !== '1') openBrowser(url);
+}
+
+/**
+ * The packaged app keeps its usual port when it can (the browser remembers
+ * profile and region per origin), reuses an Orrery already running there,
+ * and otherwise takes any free port.
+ */
+async function start(): Promise<void> {
+  let port = PORT;
+  if (packaged && !(await portFree(PORT))) {
+    if (await orreryAt(PORT)) {
+      announce(`http://127.0.0.1:${PORT}`, '이미 실행 중인 Orrery를 엽니다');
+      process.exit(0);
+    }
+    port = 0;
+  }
+  await app.listen({ port, host: '127.0.0.1' });
+  if (packaged) {
+    announce(`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`, 'Orrery가 실행 중입니다');
+    console.log('이 창을 닫거나 Ctrl+C를 누르면 종료됩니다.');
+  }
+}
+
+start().catch((err: unknown) => {
+  app.log.error(err);
+  console.error(`Orrery를 시작하지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});
 
 // Release the port promptly on restart (tsx watch sends SIGTERM); in-flight SSE
 // streams would otherwise keep the old process alive and the new one fails with EADDRINUSE.

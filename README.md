@@ -11,7 +11,7 @@ npm run dev
 
 - 웹: http://localhost:5173 (Vite, `/api`는 4820으로 프록시)
 - API 서버: http://127.0.0.1:4820 (Fastify, 로컬 전용 바인딩)
-- 기본 프로필은 `ORRERY_DEFAULT_PROFILE`(없으면 `AWS_PROFILE`, 그다음 `default`)이고, 리전은 프로필의 `region` 설정값입니다. 상단바에서 프로필·리전을 바꿀 수 있고 선택은 브라우저에 저장됩니다.
+- 기본 프로필은 `ORRERY_DEFAULT_PROFILE`(없으면 `AWS_PROFILE`, 그다음 `default`)이고, 리전은 프로필의 `region` 설정값입니다. 프로필에 리전이 없고 저장된 선택도 없으면 리전을 고를 때까지 수집하지 않고, 계정에서 켜진 리전 목록(`DescribeRegions`)을 보여줍니다. 상단바에서 프로필·리전을 바꿀 수 있고 선택은 브라우저에 저장됩니다.
 
 프로덕션 빌드는 `npm run build`(웹 번들) 후 `npm start`로 4820 포트에서 웹과 API를 함께 서빙합니다. 서버는 빌드 단계 없이 `tsx`로 TypeScript를 바로 실행합니다.
 
@@ -26,12 +26,38 @@ npm run dev
 | `ORRERY_METRICS_TTL_MS` | `60000` | 지표 캐시 수명 |
 | `ORRERY_DEFAULT_PROFILE` | – | 처음 열 때 선택할 프로필 (없으면 `AWS_PROFILE`, 그다음 `default`) |
 | `AWS_PROFILE` | – | `?profile=` 생략 시 사용할 프로필 |
+| `ORRERY_NO_OPEN` | – | `1`이면 실행파일이 브라우저를 열지 않음 |
 
 수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 상단바의 **다시 수집**은 캐시를 무시합니다.
+
+## 실행파일 (Windows·macOS)
+
+Node 없이 실행하는 단일 실행파일을 만듭니다. 각 PC에서 실행하면 그 사람의 `~/.aws`(Windows는 `%USERPROFILE%\.aws`) 프로필을 읽고, 자격증명은 그 PC 밖으로 나가지 않습니다.
+
+```bash
+npm run package                     # 전체 대상
+npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 | windows-x64)
+```
+
+- macOS에서 실행합니다(macOS 실행파일은 `codesign`으로 ad-hoc 서명해야 Apple Silicon에서 실행됨).
+- 결과는 `release/orrery-macos-arm64`, `release/orrery-macos-x64`, `release/orrery-windows-x64.exe`입니다. 크기는 대부분 Node 런타임입니다.
+- `scripts/package.mjs`가 서버를 CommonJS 한 파일로 묶고, `web/dist`를 SEA 자산으로 넣은 blob을 공식 Node 런타임(`NODE_VERSION`, 현재 24 LTS)에 `postject`로 주입합니다. 런타임은 nodejs.org에서 한 번 받아 `release/.node/`에 두며 `SHASUMS256.txt`로 검증합니다. Node 버전을 올릴 때는 이 상수만 바꿉니다.
+- Windows `node.exe`의 Authenticode 서명은 주입하면 깨지므로 제거합니다. 배포용 서명은 별도로 해야 합니다.
+
+실행파일의 동작:
+
+- 더블클릭하면 콘솔 창에 주소를 출력하고 기본 브라우저를 엽니다. 창을 닫거나 `Ctrl+C`로 종료합니다.
+- 포트는 4820을 우선 씁니다(브라우저가 프로필·리전 선택을 주소별로 기억하므로). 이미 Orrery가 떠 있으면 그 창만 열고 끝나며, 다른 프로그램이 쓰고 있으면 빈 포트를 고릅니다.
+- 캐시는 `~/Library/Application Support/Orrery/cache`(macOS) 또는 `%LOCALAPPDATA%\Orrery\cache`(Windows)에 둡니다. `.env`는 읽지 않으며 설정은 환경 변수로만 줍니다.
+- 프로필을 만들거나 SSO 로그인을 하려면 AWS CLI(`aws configure`, `aws sso login`)가 필요합니다.
 
 ## 읽기 전용 보장
 
 서버가 만드는 모든 AWS SDK 클라이언트에는 `server/src/aws/readonly-guard.ts`의 미들웨어가 붙습니다. 명령 이름이 `Describe*`, `List*`, `Get*`, `Head*`, `Lookup*`, `BatchGet*`이 아니면 요청을 서명하거나 보내기 전에 예외를 던집니다. `npm test`의 단위 테스트가 `TerminateInstances` 같은 호출이 차단되는지 확인합니다. 그래도 사용하는 자격증명에는 `ReadOnlyAccess` 정책 수준의 권한만 주는 것을 권장합니다.
+
+## 로컬 전용 요청
+
+서버는 `127.0.0.1`에만 바인딩해 다른 PC의 접속을 막습니다. 같은 브라우저에 열린 다른 사이트도 루프백에 요청할 수 있으므로 `server/src/http/local-only.ts`가 두 가지를 더 거릅니다. Host 헤더가 `127.0.0.1`·`localhost`·`[::1]`이 아니면 DNS 리바인딩으로 보고 거부합니다. `/api/` 요청의 `Sec-Fetch-Site`가 `same-origin`·`none`이 아니면(다른 사이트의 fetch·이미지·폼·링크) 수집을 시작하지 못하게 거부합니다. 화면 자체는 다른 사이트의 링크로도 열 수 있습니다. CORS 헤더는 보내지 않으므로 다른 출처는 응답을 읽을 수 없습니다. 웹은 같은 출처(프로덕션) 또는 Vite 프록시(개발)로만 API를 부릅니다.
 
 ## 구조
 
@@ -39,6 +65,8 @@ npm run dev
 shared/   그래프 모델 타입 (ResourceNode / ResourceEdge / MetricsBundle …)
 server/   Fastify API
   src/aws/          자격증명 소스 추상화, 클라이언트 팩토리, 읽기 전용 가드
+  src/http/         로컬 전용 요청 필터 (Host·Sec-Fetch-Site)
+  src/runtime.ts    저장소 실행과 실행파일 실행의 차이 (내장 웹 자산, 데이터 폴더, 포트, 브라우저 열기)
   src/collectors/   서비스별 수집기 (network, ec2, elb, rds, lambda, ecs, appsync, …)
   src/graph/        수집 결과 병합, refs → 관계 해석, 경보 부착
   src/metrics/      CloudWatch GetMetricData 카탈로그와 트래픽 정규화
@@ -47,6 +75,7 @@ web/      React 19 + Vite
   src/canvas/       React Flow 토폴로지 (플레이트·자원·집계 노드, 애니메이션 엣지)
   src/views/        유형별 보기
   src/panels/       상단바, 필터 레일, 인스펙터
+scripts/  package.mjs: Windows·macOS 단일 실행파일 빌드
 ```
 
 ### 자격증명 확장
@@ -87,5 +116,5 @@ web/      React 19 + Vite
 
 ```bash
 npm run typecheck   # shared / server / web
-npm test            # 읽기 전용 가드 등 서버 단위 테스트
+npm test            # 읽기 전용 가드, 로컬 전용 요청 필터 등 서버 단위 테스트
 ```

@@ -39,7 +39,6 @@
     "@aws-sdk/client-sqs": "^3.700.0",
     "@aws-sdk/client-sts": "^3.700.0",
     "@aws-sdk/credential-providers": "^3.700.0",
-    "@fastify/cors": "^10.0.1",
     "@fastify/static": "^8.0.3",
     "@orrery/shared": "*",
     "@smithy/shared-ini-file-loader": "^4.0.0",

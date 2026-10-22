@@ -106,6 +106,14 @@ export interface AppState {
 }
 
 let abort: AbortController | undefined;
+
+/** Regions enabled for the account. With no region chosen nothing is collected, so a failure here is the only place bad credentials show up. */
+function fetchRegions(profile: string, region: string): void {
+  api.regions(profile)
+    .then(({ regions }) => useStore.setState((s) => ({ regions, loading: region ? s.loading : { ...s.loading, error: undefined } })))
+    .catch((err: Error) => useStore.setState((s) => (region ? { regions: [region] } : { regions: [], loading: { ...s.loading, error: err.message } })));
+}
+
 const ALL_TYPES = Object.keys(TYPE_META) as ResourceType[];
 const ALL_ON: Record<Category, boolean> = { compute: true, network: true, database: true, storage: true, security: true, integration: true };
 
@@ -138,11 +146,12 @@ export const useStore = create<AppState>((set, get) => ({
     const [{ profiles, defaultProfile }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
     const wanted = get().profile;
     const profile = profiles.find((p) => p.name === wanted)?.name ?? defaultProfile;
-    const region = get().region || profiles.find((p) => p.name === profile)?.region || 'ap-northeast-2';
+    // No saved region and none in the profile: wait for the person to pick one rather than guess.
+    const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
     // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
     set({ profiles, defaultProfile, collectorLabels, profile, region });
     void get().load(false);
-    void api.regions(profile).then(({ regions }) => set({ regions })).catch(() => set({ regions: [region] }));
+    fetchRegions(profile, region);
   },
 
   async setProfile(profile) {
@@ -150,7 +159,7 @@ export const useStore = create<AppState>((set, get) => ({
     const region = p?.region ?? get().region;
     set({ profile, region, profileChosen: true, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ profile, region });
-    void api.regions(profile).then(({ regions }) => set({ regions })).catch(() => set({ regions: [region] }));
+    fetchRegions(profile, region);
     await get().load(false);
   },
 
@@ -161,6 +170,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async load(refresh = false, opts = {}) {
+    if (!get().region) return;
     const silent = Boolean(opts.silent && get().graph);
     if (!silent) { abort?.abort(); abort = new AbortController(); }
     const { profile, region, collectorLabels } = get();

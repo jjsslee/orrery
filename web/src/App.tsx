@@ -6,6 +6,7 @@ import { Rail } from './panels/Rail';
 import { Inspector } from './panels/Inspector';
 import { Topology } from './canvas/Topology';
 import { LoadOverlay } from './canvas/LoadOverlay';
+import { RegionPrompt } from './canvas/RegionPrompt';
 import { TypeView } from './views/TypeView';
 
 export default function App() {
@@ -14,6 +15,8 @@ export default function App() {
   const graph = useStore((s) => s.graph);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
+  const region = useStore((s) => s.region);
+  const idle = useStore((s) => !s.loading.active && !s.loading.error);
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
 
@@ -62,9 +65,7 @@ export default function App() {
       <main className="stage" aria-label={view === 'topology' ? '토폴로지' : '유형별 보기'}>
         {view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
         <LoadOverlay />
-        {!graph && !useStore.getState().loading.active && !useStore.getState().loading.error && (
-          <div className="empty">프로필을 선택하면 수집을 시작합니다.</div>
-        )}
+        {!graph && idle && (region ? <div className="empty">프로필을 선택하면 수집을 시작합니다.</div> : <RegionPrompt />)}
       </main>
       {selectedId && <Inspector />}
     </div>

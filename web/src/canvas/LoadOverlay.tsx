@@ -9,6 +9,7 @@ export function LoadOverlay() {
   const profile = useStore((s) => s.profile);
   const region = useStore((s) => s.region);
   const load = useStore((s) => s.load);
+  const setProfile = useStore((s) => s.setProfile);
   const order = loading.order.length ? loading.order : Object.keys(labels);
   const done = order.filter((c) => loading.reports[c]).length;
 
@@ -20,13 +21,14 @@ export function LoadOverlay() {
         <div className="load-head">
           <BrandMark size={28} spinning={loading.active} />
           <div>
-            <div className="load-title">{loading.error ? '수집하지 못했습니다' : `${profile} · ${region} 수집 중`}</div>
+            <div className="load-title">{loading.error ? (region ? '수집하지 못했습니다' : '계정에 연결하지 못했습니다') : `${profile} · ${region} 수집 중`}</div>
             <div className="load-sub">{loading.error ? loading.error : `${done}/${order.length} 완료 · 읽기 전용 API만 호출합니다`}</div>
           </div>
         </div>
         {loading.error ? (
           <div className="load-actions">
-            <button type="button" className="btn primary" onClick={() => void load(true)}><RotateCw size={14} /> 다시 시도</button>
+            {/* Without a region the failure came from listing regions, so retry that (setProfile re-lists). */}
+            <button type="button" className="btn primary" onClick={() => void (region ? load(true) : setProfile(profile))}><RotateCw size={14} /> 다시 시도</button>
             <span className="load-hint">상단바에서 프로필이나 리전을 바꾸면 바로 다시 수집합니다.</span>
           </div>
         ) : (
