@@ -15,7 +15,9 @@ export function Rail() {
   const hiddenTypes = useStore((s) => s.hiddenTypes);
   const railTab = useStore((s) => s.railTab);
   const tagFilters = useStore((s) => s.tagFilters);
-  const { setQuery, toggleCategory, toggleType, setRailTab, removeTagFilter } = useStore.getState();
+  const solo = useStore((s) => s.solo);
+  const { setQuery, toggleCategory, toggleType, setRailTab, removeTagFilter, soloType, soloCategory, resetFilters } = useStore.getState();
+  const filtered = hiddenTypes.size > 0 || Object.values(categories).some((v) => !v);
 
   const counts = useMemo(() => {
     const byType = new Map<ResourceType, number>();
@@ -79,30 +81,40 @@ export function Rail() {
         </section>
       )}
 
+      {graph && railTab === 'types' && (
+        <div className="rail-tree-head">
+          <span className="muted">{solo ? '한 가지만 보는 중' : filtered ? '일부 유형 숨김' : '행에 올리면 "만" 버튼으로 그것만 볼 수 있습니다'}</span>
+          {(filtered || query || tagFilters.length > 0) && <button type="button" className="link-btn" onClick={resetFilters}>모두 표시</button>}
+        </div>
+      )}
       {railTab === 'types' && <nav className="rail-tree">
         {CATEGORY_ORDER.map((c) => {
           const on = categories[c];
           const types = TYPES_BY_CATEGORY[c].filter((t) => (counts.byType.get(t) ?? 0) > 0);
           return (
-            <section key={c} className={`rail-cat cat-${c} ${on ? '' : 'off'}`}>
-              <button type="button" className="rail-cat-head" aria-pressed={on} aria-label={`${CATEGORY_LABEL[c]} ${on ? '숨기기' : '표시'}`} onClick={() => toggleCategory(c)} title={on ? '이 분류를 숨깁니다' : '이 분류를 표시합니다'}>
-                <span className="cat-swatch" />
-                <span className="rail-cat-name">{CATEGORY_LABEL[c]}</span>
-                <span className="rail-count tnum">{counts.byCat[c]}</span>
-              </button>
+            <section key={c} className={`rail-cat cat-${c} ${on ? '' : 'off'} ${solo === `cat:${c}` ? 'solo' : ''}`}>
+              <div className="rail-row">
+                <button type="button" className="rail-cat-head" aria-pressed={on} aria-label={`${CATEGORY_LABEL[c]} ${on ? '숨기기' : '표시'}`} onClick={(e) => (e.altKey ? soloCategory(c) : toggleCategory(c))} title={on ? '이 분류를 숨깁니다 (Option/Alt+클릭: 이 분류만)' : '이 분류를 표시합니다'}>
+                  <span className="cat-swatch" />
+                  <span className="rail-cat-name">{CATEGORY_LABEL[c]}</span>
+                  <span className="rail-count tnum">{counts.byCat[c]}</span>
+                </button>
+                <button type="button" className={`rail-only ${solo === `cat:${c}` ? 'on' : ''}`} onClick={() => soloCategory(c)} aria-label={solo === `cat:${c}` ? `${CATEGORY_LABEL[c]}만 보기 해제` : `${CATEGORY_LABEL[c]}만 보기`} title={solo === `cat:${c}` ? '모두 표시로 돌아갑니다' : '이 분류만 봅니다 (VPC·서브넷은 유지)'}>{solo === `cat:${c}` ? '해제' : '만'}</button>
+              </div>
               {on && types.length > 0 && (
                 <ul className="rail-types">
                   {types.map((t) => {
                     const hidden = hiddenTypes.has(t);
                     const meta = TYPE_META[t];
                     return (
-                      <li key={t}>
-                        <button type="button" className={`rail-type ${hidden ? 'off' : ''}`} aria-pressed={!hidden} aria-label={`${meta.label} ${hidden ? '표시' : '숨기기'}`} onClick={() => toggleType(t)} title={meta.overlay ? '토폴로지에서는 레이어를 켜야 보입니다' : undefined}>
+                      <li key={t} className={`rail-row ${solo === t ? 'solo' : ''}`}>
+                        <button type="button" className={`rail-type ${hidden ? 'off' : ''}`} aria-pressed={!hidden} aria-label={`${meta.label} ${hidden ? '표시' : '숨기기'}`} onClick={(e) => (e.altKey ? soloType(t) : toggleType(t))} title={meta.overlay ? '토폴로지에서는 레이어를 켜야 보입니다 (Option/Alt+클릭: 이 유형만)' : 'Option/Alt+클릭: 이 유형만'}>
                           <TypeIcon type={t} size={14} />
                           <span className="rail-type-name">{meta.label}</span>
                           {meta.overlay && <span className="rail-layer">레이어</span>}
                           <span className="rail-count tnum">{counts.byType.get(t)}</span>
                         </button>
+                        <button type="button" className={`rail-only ${solo === t ? 'on' : ''}`} onClick={() => soloType(t)} aria-label={solo === t ? `${meta.label}만 보기 해제` : `${meta.label}만 보기`} title={solo === t ? '모두 표시로 돌아갑니다' : '이 유형만 봅니다 (VPC·서브넷은 유지)'}>{solo === t ? '해제' : '만'}</button>
                       </li>
                     );
                   })}

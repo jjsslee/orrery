@@ -97,6 +97,14 @@
 .search-clear { color: var(--ink-3); display: inline-flex; }
 .rail-status { padding: 2px 2px 0; }
 .rail-tree { display: flex; flex-direction: column; gap: 4px; }
+.rail-tree-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; min-height: 22px; }
+.rail-row { display: flex; align-items: center; gap: 2px; }
+.rail-row > .rail-cat-head, .rail-row > .rail-type { flex: 1; min-width: 0; }
+.rail-only { flex: none; height: 22px; padding: 0 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--ink-3); font-size: 11px; opacity: 0; transition: opacity 120ms; }
+.rail-row:hover .rail-only, .rail-only:focus-visible, .rail-only.on { opacity: 1; }
+.rail-only:hover { color: var(--ink); border-color: var(--line-strong); }
+.rail-only.on { background: color-mix(in srgb, var(--pulse) 18%, transparent); border-color: color-mix(in srgb, var(--pulse) 50%, transparent); color: var(--ink); }
+.rail-row.solo > .rail-type, .rail-cat.solo > .rail-row > .rail-cat-head { background: color-mix(in srgb, var(--pulse) 10%, transparent); color: var(--ink); }
 .rail-cat { border-radius: var(--radius-s); }
 .rail-cat-head { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: var(--radius-s); color: var(--ink); font-weight: 600; text-align: left; }
 .rail-cat-head:hover { background: var(--panel-2); }

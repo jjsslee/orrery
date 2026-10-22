@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
 import { api } from '../api/client';
 import { sameTagFilter, type TagFilter } from './tags';
+import { TYPE_META } from './types';
 
 export type ViewMode = 'topology' | 'types';
 
@@ -55,6 +56,8 @@ export interface AppState {
   /** Monotonic counter: bump to ask the canvas to fit the view */
   fitRequest: number;
   railTab: 'types' | 'tags';
+  /** "Only this" isolation: a resource type or `cat:<category>`; undefined when not isolating */
+  solo?: string;
   /** Active tag filters; a resource must satisfy all of them */
   tagFilters: TagFilter[];
   /** Also show resources one hop away from a tagged resource */
@@ -76,6 +79,10 @@ export interface AppState {
   setTheme(t: 'dark' | 'light'): void;
   requestFit(): void;
   setRailTab(t: 'types' | 'tags'): void;
+  /** Show only this type (plus VPC/subnet plates for context); call again to clear */
+  soloType(t: ResourceType): void;
+  soloCategory(c: Category): void;
+  resetFilters(): void;
   addTagFilter(f: TagFilter): void;
   removeTagFilter(f: TagFilter): void;
   clearTagFilters(): void;
@@ -83,6 +90,8 @@ export interface AppState {
 }
 
 let abort: AbortController | undefined;
+const ALL_TYPES = Object.keys(TYPE_META) as ResourceType[];
+const ALL_ON: Record<Category, boolean> = { compute: true, network: true, database: true, storage: true, security: true, integration: true };
 
 export const useStore = create<AppState>((set, get) => ({
   profiles: [],
@@ -175,8 +184,19 @@ export const useStore = create<AppState>((set, get) => ({
   },
   hover: (hoverId) => set({ hoverId }),
   setQuery: (query) => set({ query }),
-  toggleCategory: (c) => set((s) => ({ categories: { ...s.categories, [c]: !s.categories[c] } })),
-  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { hiddenTypes: next }; }),
+  toggleCategory: (c) => set((s) => ({ categories: { ...s.categories, [c]: !s.categories[c] }, solo: undefined })),
+  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { hiddenTypes: next, solo: undefined }; }),
+  soloType: (t) => set((s) => {
+    if (s.solo === t) return { hiddenTypes: new Set(), categories: ALL_ON, solo: undefined };
+    const keep = new Set<ResourceType>([t, 'vpc', 'subnet']);
+    return { hiddenTypes: new Set(ALL_TYPES.filter((x) => !keep.has(x))), categories: ALL_ON, solo: t };
+  }),
+  soloCategory: (c) => set((s) => {
+    const key = `cat:${c}`;
+    if (s.solo === key) return { hiddenTypes: new Set(), categories: ALL_ON, solo: undefined };
+    return { hiddenTypes: new Set(ALL_TYPES.filter((x) => TYPE_META[x].category !== c && x !== 'vpc' && x !== 'subnet')), categories: ALL_ON, solo: key };
+  }),
+  resetFilters: () => set({ hiddenTypes: new Set(), categories: ALL_ON, solo: undefined, query: '', tagFilters: [] }),
   setOverlay: (k, v) => set((s) => ({ overlays: { ...s.overlays, [k]: v } })),
   toggleExpanded: (id) => set((s) => { const next = new Set(s.expanded); next.has(id) ? next.delete(id) : next.add(id); return { expanded: next }; }),
   setTheme: (theme) => { document.documentElement.dataset.theme = theme; savePrefs({ theme }); set({ theme }); },

@@ -12,7 +12,8 @@ import { PlateNode, type PlateNodeType } from './nodes/PlateNode';
 import { AggregateNode, type AggregateNodeType } from './nodes/AggregateNode';
 import { FlowEdge, type FlowEdgeType } from './edges/FlowEdge';
 import { CanvasToolbar } from './CanvasToolbar';
-import { CATEGORY_ORDER } from '../model/types';
+import { CATEGORY_ORDER, TYPE_META } from '../model/types';
+import type { ResourceType } from '@orrery/shared';
 
 const nodeTypes = { resource: ResourceNode, plate: PlateNode, aggregate: AggregateNode };
 const edgeTypes = { flow: FlowEdge };
@@ -31,6 +32,7 @@ function TopologyInner() {
   const query = useStore((s) => s.query);
   const tagFilters = useStore((s) => s.tagFilters);
   const tagNeighbors = useStore((s) => s.tagNeighbors);
+  const solo = useStore((s) => s.solo);
   const expanded = useStore((s) => s.expanded);
   const selectedId = useStore((s) => s.selectedId);
   const hoverId = useStore((s) => s.hoverId);
@@ -41,8 +43,12 @@ function TopologyInner() {
   const rf = useReactFlow();
 
   const scene: Scene | undefined = useMemo(
-    () => (graph ? buildScene({ graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic }) : undefined),
-    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic],
+    () => (graph ? buildScene({
+      graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic,
+      pruneEmptyPlates: Boolean(solo && solo !== 'vpc' && solo !== 'subnet'),
+      noFoldTypes: solo ? new Set((Object.keys(TYPE_META) as ResourceType[]).filter((t) => (solo.startsWith('cat:') ? TYPE_META[t].category === solo.slice(4) : t === solo))) : undefined,
+    }) : undefined),
+    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic, solo],
   );
 
   // Re-layout only when the structure changes, not on dim/traffic updates.

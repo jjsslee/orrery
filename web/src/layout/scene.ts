@@ -53,6 +53,10 @@ export interface SceneInput {
   query: string;
   tagFilters?: TagFilter[];
   tagNeighbors?: boolean;
+  /** Drop VPC/subnet plates that end up empty (used while isolating one type) */
+  pruneEmptyPlates?: boolean;
+  /** Types that are never folded into aggregates (the isolated type) */
+  noFoldTypes?: Set<ResourceType>;
   expanded: Set<string>;
   selectedId?: string;
   traffic?: Record<string, number>;
@@ -156,8 +160,9 @@ export function buildScene(input: SceneInput): Scene {
   const connected = new Set<string>();
   for (const e of edges) { connected.add(e.source); connected.add(e.target); }
 
-  // 4. neighbours of the selection stay individual
+  // 4. neighbours of the selection (and isolated types) stay individual
   const pinned = new Set<string>(matched);
+  if (input.noFoldTypes?.size) for (const id of visible) { const n = byId.get(id)!; if (input.noFoldTypes.has(n.type)) pinned.add(n.id); }
   if (selectedId) {
     pinned.add(selectedId);
     for (const e of edges) { if (e.source === selectedId) pinned.add(e.target); if (e.target === selectedId) pinned.add(e.source); }
@@ -229,8 +234,11 @@ export function buildScene(input: SceneInput): Scene {
 
   // Root plates (VPCs, orphan subnets) and lanes
   const rootKids = children.get('root') ?? [];
+  const hasResourceDescendant = (id: string): boolean =>
+    (children.get(id) ?? []).some((k) => (isPlate(k) ? hasResourceDescendant(k.id) : true));
   for (const n of rootKids) {
     if (!isPlate(n)) continue;
+    if (input.pruneEmptyPlates && !pinned.has(n.id) && !hasResourceDescendant(n.id)) continue;
     sceneNodes.set(n.id, { id: n.id, kind: 'plate', node: n, depth: 0, dim: false, traffic: 0, width: 0, height: 0 });
     const subPlates = (children.get(n.id) ?? []).filter(isPlate);
     const emptySubs: ResourceNode[] = [];
@@ -240,7 +248,7 @@ export function buildScene(input: SceneInput): Scene {
       sceneNodes.set(s.id, { id: s.id, kind: 'plate', parentId: n.id, node: s, depth: 1, dim: false, traffic: 0, width: 0, height: 0 });
       placeChildren(s.id, s.id, 2, false);
     }
-    if (emptySubs.length) {
+    if (emptySubs.length && !input.pruneEmptyPlates) {
       const aggId = aggregateId(n.id, 'subnet');
       sceneNodes.set(aggId, {
         id: aggId, kind: 'aggregate', parentId: n.id, depth: 1, dim: false, traffic: 0, width: NODE_W, height: AGG_H,
