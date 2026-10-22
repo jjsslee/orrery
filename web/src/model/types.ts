@@ -2,7 +2,7 @@ import type { Category, ResourceType, Status } from '@orrery/shared';
 import {
   Archive, ArrowLeftRight, Boxes, Braces, CalendarClock, Container, Database, DatabaseZap, FileKey, FolderTree, Globe, Grid2x2,
   Hammer, Hexagon, Inbox, KeyRound, Layers, ListTree, Lock, Map as MapIcon, Megaphone, MemoryStick, Network, Orbit, Package, Plug,
-  Server, Shield, Signpost, Table2, Target, Users, Waypoints, Zap, type LucideIcon,
+  Rss, Server, Shield, Signpost, Table2, Target, Users, Waypoints, Zap, type LucideIcon,
 } from 'lucide-react';
 
 export interface TypeMeta {
@@ -30,6 +30,7 @@ export const TYPE_META: Record<ResourceType, TypeMeta> = {
   'target-group': { label: '타깃 그룹', short: 'TG', category: 'network', icon: Target, overlay: 'targetGroups', keyProp: '프로토콜/포트' },
   cloudfront: { label: 'CloudFront', short: 'CloudFront', category: 'network', icon: Orbit, keyProp: '도메인' },
   'api-gateway': { label: 'API Gateway', short: 'API', category: 'network', icon: Braces, keyProp: '유형' },
+  'appsync-api': { label: 'AppSync API', short: 'AppSync', category: 'network', icon: Rss, keyProp: '유형' },
   'route53-zone': { label: 'Route 53 호스팅 영역', short: 'Route 53', category: 'network', icon: Signpost, keyProp: '도메인' },
   'ec2-instance': { label: 'EC2 인스턴스', short: 'EC2', category: 'compute', icon: Server, keyProp: '인스턴스 유형' },
   'autoscaling-group': { label: '오토스케일링 그룹', short: 'ASG', category: 'compute', icon: Layers, keyProp: '현재 인스턴스' },

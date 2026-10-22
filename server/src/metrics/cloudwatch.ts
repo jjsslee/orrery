@@ -129,6 +129,17 @@ const STATES = specs('AWS/States', [
   { metric: 'ExecutionsStarted', stat: 'Sum', label: '실행 시작', unit: 'count', throughput: true },
   { metric: 'ExecutionsFailed', stat: 'Sum', label: '실행 실패', unit: 'count' },
 ]);
+const APPSYNC_GRAPHQL = specs('AWS/AppSync', [
+  { metric: 'Requests', stat: 'Sum', label: '요청 수', unit: 'count', throughput: true },
+  { metric: 'Latency', stat: 'Average', label: '지연', unit: 'ms' },
+  { metric: '5XXError', stat: 'Sum', label: '5xx 오류', unit: 'count' },
+]);
+const APPSYNC_EVENTS = specs('AWS/AppSync', [
+  { metric: 'Requests', stat: 'Sum', label: '요청 수', unit: 'count', throughput: true },
+  { metric: 'ActiveConnections', stat: 'Average', label: '활성 연결', unit: 'count' },
+  { metric: 'SuccessfulEvents', stat: 'Sum', label: '성공 이벤트', unit: 'count' },
+  { metric: '5XXError', stat: 'Sum', label: '5xx 오류', unit: 'count' },
+]);
 const ASG = specs('AWS/AutoScaling', [{ metric: 'GroupInServiceInstances', stat: 'Average', label: '서비스 중 인스턴스', unit: 'count' }]);
 const S3_SIZE: MetricSpec = { namespace: 'AWS/S3', metric: 'BucketSizeBytes', stat: 'Average', label: '저장 용량', unit: 'bytes', period: DAY, window: 3 * DAY };
 const S3_OBJECTS: MetricSpec = { namespace: 'AWS/S3', metric: 'NumberOfObjects', stat: 'Average', label: '객체 수', unit: 'count', period: DAY, window: 3 * DAY };
@@ -178,6 +189,8 @@ export function queriesForNode(node: ResourceNode): MetricQuery[] {
       const kind = str(node.props['_apiKind']) ?? 'rest';
       return kind === 'rest' ? q(API_REST, [dim('ApiName', node.name)]) : q(API_V2, [dim('ApiId', id)]);
     }
+    case 'appsync-api':
+      return str(node.props['_apiKind']) === 'events' ? q(APPSYNC_EVENTS, [dim('EventAPIId', id)]) : q(APPSYNC_GRAPHQL, [dim('GraphQLAPIId', id)]);
     case 'efs': return q(EFS, [dim('FileSystemId', id)]);
     case 'eventbridge-rule': return q(EVENTS, [dim('RuleName', str(node.props['_ruleName']) ?? id)]);
     case 'step-function': return node.arn ? q(STATES, [dim('StateMachineArn', node.arn)]) : [];

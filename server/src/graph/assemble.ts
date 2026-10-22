@@ -110,7 +110,7 @@ function kindFor(source: ResourceNode, target: ResourceNode): EdgeKind {
   if (source.type === 'route53-zone') return 'resolves';
   if (target.type === 'kms-key') return 'encrypts';
   if (target.type === 'iam-role') return 'assumes';
-  if (['lambda', 'step-function', 'api-gateway', 'load-balancer', 'ecs-service'].includes(target.type)) return 'invokes';
+  if (['lambda', 'step-function', 'api-gateway', 'appsync-api', 'load-balancer', 'ecs-service'].includes(target.type)) return 'invokes';
   if (['sqs-queue', 'sns-topic', 'eventbridge-rule'].includes(target.type)) return 'publishes';
   if (['subnet', 'vpc', 'security-group'].includes(target.type)) return 'attached';
   return 'reads';
@@ -217,6 +217,8 @@ function applyAlarms(nodes: Map<string, ResourceNode>, alarms: AlarmInfo[]): voi
     if (d.DistributionId) return nodes.get(nid('cloudfront', d.DistributionId));
     if (d.ApiId) return nodes.get(nid('api-gateway', d.ApiId));
     if (d.ApiName) return find('api-gateway', (n) => n.name === d.ApiName);
+    if (d.GraphQLAPIId) return nodes.get(nid('appsync-api', d.GraphQLAPIId));
+    if (d.EventAPIId) return nodes.get(nid('appsync-api', d.EventAPIId));
     if (d.AutoScalingGroupName) return nodes.get(nid('autoscaling-group', d.AutoScalingGroupName));
     if (d.BucketName) return nodes.get(nid('s3-bucket', d.BucketName));
     if (d.StateMachineArn) return find('step-function', (n) => n.arn === d.StateMachineArn);

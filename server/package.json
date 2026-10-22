@@ -12,6 +12,7 @@
   "dependencies": {
     "@aws-sdk/client-api-gateway": "^3.700.0",
     "@aws-sdk/client-apigatewayv2": "^3.700.0",
+    "@aws-sdk/client-appsync": "^3.1155.0",
     "@aws-sdk/client-auto-scaling": "^3.700.0",
     "@aws-sdk/client-cloudfront": "^3.700.0",
     "@aws-sdk/client-cloudwatch": "^3.700.0",

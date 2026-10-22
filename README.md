@@ -37,7 +37,7 @@ npm run dev
 shared/   그래프 모델 타입 (ResourceNode / ResourceEdge / MetricsBundle …)
 server/   Fastify API
   src/aws/          자격증명 소스 추상화, 클라이언트 팩토리, 읽기 전용 가드
-  src/collectors/   서비스별 수집기 (network, ec2, elb, rds, lambda, ecs, …)
+  src/collectors/   서비스별 수집기 (network, ec2, elb, rds, lambda, ecs, appsync, …)
   src/graph/        수집 결과 병합, refs → 관계 해석, 경보 부착
   src/metrics/      CloudWatch GetMetricData 카탈로그와 트래픽 정규화
 web/      React 19 + Vite

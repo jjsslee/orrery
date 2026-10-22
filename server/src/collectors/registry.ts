@@ -4,6 +4,7 @@
  */
 import type { Collector } from './types.ts';
 import { alarmsCollector } from './alarms.ts';
+import { appsyncCollector } from './appsync.ts';
 import { codebuildCollector } from './codebuild.ts';
 import { dynamodbCollector } from './dynamodb.ts';
 import { ec2Collector } from './ec2.ts';
@@ -22,6 +23,7 @@ import { securityCollector } from './security.ts';
 
 export const extraCollectors: Collector[] = [
   alarmsCollector,
+  appsyncCollector,
   codebuildCollector,
   dynamodbCollector,
   ec2Collector,

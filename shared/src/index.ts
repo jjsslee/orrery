@@ -34,6 +34,7 @@ export type ResourceType =
   | 'target-group'
   | 'cloudfront'
   | 'api-gateway'
+  | 'appsync-api'
   | 'route53-zone'
   // compute
   | 'ec2-instance'

@@ -64,7 +64,7 @@ export const AGG_H = 50;
 const GROUP_THRESHOLD = 6;
 /** Hub-like types are never folded while they have relationships: folding them hides the shape of the system. */
 const HUB_TYPES = new Set<ResourceType>([
-  'load-balancer', 'api-gateway', 'cloudfront', 'route53-zone', 'nat-gateway', 'internet-gateway', 'rds-cluster', 'rds-instance',
+  'load-balancer', 'api-gateway', 'appsync-api', 'cloudfront', 'route53-zone', 'nat-gateway', 'internet-gateway', 'rds-cluster', 'rds-instance',
   'elasticache', 'ecs-cluster', 'eks-cluster', 'sns-topic', 'sqs-queue', 'eventbridge-rule', 'step-function', 'efs', 'autoscaling-group',
   'cognito-user-pool', 'kms-key',
 ]);
