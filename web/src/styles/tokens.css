@@ -1,0 +1,94 @@
+/* Orrery design tokens.
+   Dark is the primary scene: traffic reads as light on a night map.
+   Category hues were validated with the dataviz palette validator
+   (all-pairs ΔE normal 18.4 / CVD 11.0 on #0B1222). */
+:root {
+  color-scheme: dark;
+
+  --canvas: #0b1222;
+  --canvas-deep: #070d19;
+  --panel: #111a2e;
+  --panel-2: #172238;
+  --panel-3: #1e2b46;
+  --line: #243050;
+  --line-strong: #34446c;
+  --plate-vpc: rgba(151, 79, 237, 0.06);
+  --plate-vpc-line: rgba(151, 79, 237, 0.35);
+  --plate-subnet: rgba(108, 162, 253, 0.05);
+  --plate-subnet-line: rgba(108, 162, 253, 0.28);
+  --plate-lane: rgba(255, 255, 255, 0.025);
+  --plate-lane-line: rgba(255, 255, 255, 0.1);
+
+  --ink: #e9eef8;
+  --ink-2: #a4b0ca;
+  --ink-3: #6e7b99;
+  --ink-4: #4a5572;
+
+  --focus: #f5f7fb;
+  --pulse: #f5d58a;
+  --pulse-soft: rgba(245, 213, 138, 0.35);
+
+  --cat-compute: #c1821f;
+  --cat-network: #974fed;
+  --cat-database: #6ca2fd;
+  --cat-storage: #77c58e;
+  --cat-security: #c71f28;
+  --cat-integration: #e55caf;
+
+  --status-healthy: #3dc47e;
+  --status-warning: #e9a23b;
+  --status-critical: #ff5a5f;
+  --status-inactive: #6e7b99;
+  --status-unknown: #4a5572;
+
+  --font-ui: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+
+  --rail-w: 272px;
+  --inspector-w: 360px;
+  --topbar-h: 56px;
+
+  --shadow-pop: 0 12px 32px rgba(3, 7, 16, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: #f3f5f9;
+  --canvas-deep: #e9edf4;
+  --panel: #ffffff;
+  --panel-2: #f6f8fb;
+  --panel-3: #eceff5;
+  --line: #dde3ee;
+  --line-strong: #c6cfe0;
+  --plate-vpc: rgba(151, 79, 237, 0.05);
+  --plate-vpc-line: rgba(151, 79, 237, 0.4);
+  --plate-subnet: rgba(42, 120, 214, 0.05);
+  --plate-subnet-line: rgba(42, 120, 214, 0.35);
+  --plate-lane: rgba(0, 0, 0, 0.02);
+  --plate-lane-line: rgba(0, 0, 0, 0.1);
+  --ink: #0f172a;
+  --ink-2: #44506b;
+  --ink-3: #6b7790;
+  --ink-4: #9aa5bb;
+  --focus: #0f172a;
+  --pulse: #b8860b;
+  --pulse-soft: rgba(184, 134, 11, 0.35);
+  --cat-compute: #a86a0f;
+  --cat-network: #7a3fd0;
+  --cat-database: #2a78d6;
+  --cat-storage: #1f8f57;
+  --cat-security: #c0262e;
+  --cat-integration: #c43f98;
+  --status-healthy: #1b9c57;
+  --status-warning: #c77d0e;
+  --status-critical: #d6353b;
+  --status-inactive: #7c879d;
+  --status-unknown: #a0a9bb;
+  --shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.12), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
