@@ -83,6 +83,18 @@ export interface MetricSeries {
   /** Aggregation used, e.g. Sum / Average */
   stat: string;
   points: MetricPoint[];
+  status?: 'complete' | 'empty' | 'partial' | 'error';
+  /** Original CloudWatch result status; preserved even when Messages is absent. */
+  awsStatus?: string;
+  /** AWS/SDK exception name, for authorization/expiry versus retryable failures. */
+  errorCode?: string;
+  messages?: string[];
+  period?: number;
+  startTime?: string;
+  endTime?: string;
+  fetchedAt?: string;
+  lastDataAt?: string;
+  region?: string;
   /** Latest non-null value, convenience for the UI */
   latest: number | null;
 }
@@ -100,6 +112,8 @@ export interface ResourceNode {
   /** Containment parent (vpc → subnet → instance). Omit for top level. */
   parentId?: string;
   status: Status;
+  baseStatus?: Status;
+  baseStatusLabel?: string;
   /** Short human status, e.g. running / available / 2/3 healthy */
   statusLabel?: string;
   /** Availability zone for placement hints */
@@ -171,9 +185,13 @@ export interface ResourceGraph {
   nodes: ResourceNode[];
   edges: ResourceEdge[];
   reports: CollectorReport[];
+  statusObservation?: ObservationState;
+  alarmObservation?: ObservationState;
 }
 
 export interface MetricsBundle {
+  /** Actual server credential scope; detect same-profile account changes before merging. */
+  scope?: MonitoringScope;
   region: string;
   collectedAt: string;
   /** node id → series list */
@@ -183,7 +201,17 @@ export interface MetricsBundle {
 }
 
 /** Result of a status-only pass (free Describe/List calls, no CloudWatch metrics). */
+export interface ObservationState {
+  errorCode?: string;
+  attemptedAt: string;
+  succeededAt?: string;
+  error?: string;
+}
+
 export interface StatusBundle {
+  scope?: MonitoringScope;
+  statusObservation?: ObservationState;
+  alarmObservation?: ObservationState;
   collectedAt: string;
   /** How many nodes the pass re-read */
   checked: number;
@@ -226,3 +254,83 @@ export const STATUS_LABEL: Record<Status, string> = {
   inactive: '중지',
   unknown: '알 수 없음',
 };
+
+/** Monitoring settings and results are isolated from topology collection. */
+export interface MonitoringScope { source: string; account: string; region: string }
+export type MonitoringResourceType = 'lambda' | 'sqs-queue' | 'load-balancer' | 'ecs-service' | 'ec2-instance' | 'rds-instance';
+export interface MonitoringResource {
+  key: string;
+  nodeId: string;
+  type: ResourceType;
+  nativeId: string;
+  name: string;
+  region: string;
+  arn?: string;
+  tags?: Record<string, string>;
+  tagsStatus: 'complete' | 'unavailable';
+  props: Record<string, string | number | boolean | null>;
+}
+export interface MonitoringResourceIndex {
+  scope: MonitoringScope;
+  resources: MonitoringResource[];
+  types: MonitoringResourceType[];
+  complete: boolean;
+  observation: ObservationState;
+}
+export interface AlarmMetric { namespace?: string; metric?: string; dimensions: Record<string, string>; stat?: string; period?: number }
+export interface AlarmRecord {
+  name: string;
+  arn?: string;
+  region: string;
+  type: 'metric' | 'composite';
+  state: AlarmInfo['state'];
+  reason?: string;
+  stateUpdatedAt?: string;
+  description?: string;
+  threshold?: number;
+  comparisonOperator?: string;
+  evaluationPeriods?: number;
+  datapointsToAlarm?: number;
+  treatMissingData?: string;
+  metrics: AlarmMetric[];
+  rule?: string;
+  expressions?: string[];
+  childAlarmNames?: string[];
+  resourceKeys: string[];
+  mapping: 'matched' | 'unresolved';
+}
+export interface MonitoringAlarmSnapshot {
+  scope: MonitoringScope;
+  alarms: AlarmRecord[];
+  complete: boolean;
+  observation: ObservationState;
+}
+export interface AlarmHistoryItem { timestamp?: string; type?: string; summary?: string; data?: string }
+export interface AlarmHistorySnapshot {
+  items: AlarmHistoryItem[];
+  nextToken?: string;
+  observation: ObservationState;
+}
+
+export interface MonitoringMetricRequest {
+  resourceKeys: string[];
+  range: { startTime: string; endTime: string };
+  metricIds?: string[];
+  /** Optional coarser resolution; server/service minimums still apply. */
+  period?: number;
+  refresh?: boolean;
+}
+export interface MonitoringMetricSeries extends MetricSeries { id: string }
+export interface MonitoringMetricsSnapshot {
+  scope: MonitoringScope;
+  /** Requested display window; each series carries its effective aligned AWS query window. */
+  range: { startTime: string; endTime: string };
+  collectedAt: string;
+  series: Record<string, MonitoringMetricSeries[]>;
+  queryCount: number;
+  /** SDK commands, excluding SDK retry attempts (up to 8 attempts per command). */
+  requestCount: number;
+  maxRequests: number;
+}
+
+export interface SavedResourceGroup { id: string; name: string; tagFilters: Array<{ key: string; value?: string }>; resourceKeys: string[] }

@@ -18,9 +18,11 @@ export function TopBar() {
   const theme = useStore((s) => s.theme);
   const live = useStore((s) => s.live);
   const liveBusy = useStore((s) => s.liveBusy);
+  const statusError = useStore((s) => s.statusError);
+  const metricsLoading = useStore((s) => s.metricsLoading);
   const liveStatusAt = useStore((s) => s.liveStatusAt);
   const packaged = useStore((s) => s.packaged);
-  const { setProfile, setRegion, load, setView, setTheme, setLive, quitApp } = useStore.getState();
+  const { setProfile, setRegion, load, setView, setTheme, setLive, quitApp, loadMetrics, reconnect } = useStore.getState();
 
   return (
     <header className="topbar">
@@ -33,6 +35,7 @@ export function TopBar() {
       <div className="topbar-center" role="tablist" aria-label="보기">
         <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>토폴로지</button>
         <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>유형별</button>
+        <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>모니터링</button>
       </div>
 
       <div className="topbar-right">
@@ -54,9 +57,11 @@ export function TopBar() {
           width={168}
           options={(regions.length ? regions : region ? [region] : []).map((r) => ({ value: r, label: r }))}
         />
+        <button type="button" className="link-btn" onClick={() => void reconnect()} disabled={!profile || loading.active} title="AWS 자격증명과 계정을 다시 확인하고 캐시를 분리합니다">다시 연결</button>
         <div className="identity" title={identity?.arn ?? ''}>
           {identity ? <span className="mono">{maskAccount(identity.account)}</span> : <span className="muted">계정 확인 중</span>}
         </div>
+        {view !== 'monitoring' && <>
         <button
           type="button"
           className={`live-toggle ${live ? 'on' : ''}`}
@@ -64,17 +69,20 @@ export function TopBar() {
           aria-checked={live}
           onClick={() => setLive(!live)}
           disabled={!graph}
-          title="무료 호출만 사용합니다: 상태는 2분, 구성은 10분마다 갱신하고 지표는 손으로 다시 수집할 때만 읽습니다. 탭이 보이지 않으면 멈춥니다."
+          title="상태는 2분, 구성은 10분마다 갱신합니다. CloudWatch 지표는 전체 지표 조회 버튼으로만 읽으며 비용이 발생할 수 있습니다. 탭이 보이지 않으면 멈춥니다."
         >
           <Radio size={13} className={liveBusy ? 'spin' : ''} />
           <span>라이브</span>
           {live && <span className="live-dot" aria-hidden />}
           {live && liveStatusAt && <span className="live-when tnum">{fmtRelative(liveStatusAt)}</span>}
         </button>
-        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} title="캐시를 무시하고 다시 수집합니다 (지표도 새로 읽습니다)">
+        {statusError && <span role="status" className="muted" title={statusError}>조회 문제 · 이전 상태 포함</span>}
+        <button type="button" className="btn" onClick={() => void loadMetrics(true)} disabled={!graph || metricsLoading} title="현재 구성의 전체 자원 CloudWatch 지표를 조회합니다. 비용이 발생할 수 있습니다.">{metricsLoading ? '지표 조회 중' : '전체 지표 조회'}</button>
+        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} title="캐시를 무시하고 구성을 다시 수집합니다">
           <RotateCw size={14} className={loading.active ? 'spin' : ''} />
           <span>{graph ? `다시 수집 · ${fmtRelative(graph.collectedAt)}` : '수집'}</span>
         </button>
+        </>}
         <span className="readonly" title="서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다">
           <Eye size={13} /> 읽기 전용
         </span>

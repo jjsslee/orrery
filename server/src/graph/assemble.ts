@@ -188,7 +188,17 @@ function matchHostSuffix(host: string, idx: RefIndex): ResourceNode | undefined 
 
 /* -------------------------------------------------------------- alarms */
 
-function applyAlarms(nodes: Map<string, ResourceNode>, alarms: AlarmInfo[]): void {
+export function applyAlarms(nodes: Map<string, ResourceNode>, alarms: AlarmInfo[]): void {
+  for (const n of nodes.values()) {
+    if (n.baseStatus === undefined) {
+      n.baseStatus = n.status;
+      n.baseStatusLabel = n.statusLabel;
+    }
+    n.status = n.baseStatus;
+    n.statusLabel = n.baseStatusLabel;
+    n.alarms = undefined;
+    delete n.props['경보'];
+  }
   if (!alarms.length) return;
   const byType = new Map<ResourceType, ResourceNode[]>();
   for (const n of nodes.values()) {
@@ -225,13 +235,18 @@ function applyAlarms(nodes: Map<string, ResourceNode>, alarms: AlarmInfo[]): voi
     if (d.RuleName) return nodes.get(nid('eventbridge-rule', d.RuleName));
     return undefined;
   };
+  const attached = new Map<string, Set<string>>();
   for (const a of alarms) {
     const n = resolve(a);
     if (!n) continue;
+    const names = attached.get(n.id) ?? new Set<string>();
+    if (names.has(a.name)) continue;
+    names.add(a.name);
+    attached.set(n.id, names);
     const list = n.alarms ?? [];
     if (a.state === 'ALARM') {
       list.push(a.name);
-      if (STATUS_RANK[n.status] < STATUS_RANK.critical) {
+      if (STATUS_RANK[n.status] < STATUS_RANK.critical || n.statusLabel?.startsWith('알람 ')) {
         n.status = 'critical';
         n.statusLabel = `알람 ${list.length}건`;
       }

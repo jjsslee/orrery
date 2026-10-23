@@ -4,6 +4,7 @@
  * union in @orrery/shared leaves room for assume-role / environment / SSO
  * device flows without touching collectors.
  */
+import { createHash } from 'node:crypto';
 import { fromIni, fromEnv, fromTemporaryCredentials } from '@aws-sdk/credential-providers';
 import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
 import type { CredentialSourceSpec, ProfileInfo } from '@orrery/shared';
@@ -33,7 +34,7 @@ export function describeSource(spec: CredentialSourceSpec): string {
     case 'environment':
       return 'environment';
     case 'assume-role':
-      return `assume-role:${spec.roleArn}`;
+      return `assume-role:${JSON.stringify([spec.roleArn, spec.baseProfile ?? '', spec.externalId ? createHash('sha256').update(spec.externalId).digest('hex') : ''])}`;
   }
 }
 

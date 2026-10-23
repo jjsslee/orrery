@@ -15,7 +15,7 @@ import type { ClientFactory } from '../aws/clients.ts';
 export interface MetricSpec {
   namespace: string;
   metric: string;
-  stat: 'Sum' | 'Average' | 'Maximum' | 'Minimum' | 'SampleCount';
+  stat: 'Sum' | 'Average' | 'Maximum' | 'Minimum' | 'SampleCount' | 'p95';
   label: string;
   unit: string;
   /** This metric drives the node's traffic intensity */
@@ -245,7 +245,7 @@ function groupBatches(queries: MetricQuery[]): Batch[] {
   return out;
 }
 
-async function fetchBatch(clients: ClientFactory, batch: Batch, now: Date): Promise<Map<string, MetricPoint[]>> {
+async function fetchBatch(clients: ClientFactory, batch: Batch, now: Date): Promise<Map<string, { points: MetricPoint[]; status?: string; awsStatus?: string; errorCode?: string; messages: string[] }>> {
   const cw = clients.get(CloudWatchClient, batch.region);
   // Ids must match /^[a-z][a-zA-Z0-9_]*$/; the index maps back to batch.queries[i]
   const MetricDataQueries: MetricDataQuery[] = batch.queries.map((q, i) => ({
@@ -253,10 +253,12 @@ async function fetchBatch(clients: ClientFactory, batch: Batch, now: Date): Prom
     MetricStat: { Metric: { Namespace: q.spec.namespace, MetricName: q.spec.metric, Dimensions: q.dims }, Period: batch.period, Stat: q.spec.stat },
     ReturnData: true,
   }));
-  const points = new Map<string, MetricPoint[]>();
+  const points = new Map<string, { points: MetricPoint[]; status?: string; awsStatus?: string; errorCode?: string; messages: string[] }>();
   let NextToken: string | undefined;
   do {
-    const res = await cw.send(
+    let res;
+    try {
+      res = await cw.send(
       new GetMetricDataCommand({
         MetricDataQueries,
         StartTime: new Date(now.getTime() - batch.window * 1000),
@@ -265,15 +267,33 @@ async function fetchBatch(clients: ClientFactory, batch: Batch, now: Date): Prom
         NextToken,
       }),
     );
+    } catch (err) {
+      if (!points.size) throw err;
+      const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      batch.queries.forEach((_query, i) => {
+        const key = `q${i}`;
+        const entry = points.get(key) ?? { points: [], status: 'InternalError', messages: [] };
+        if (entry.status !== 'Forbidden' && entry.status !== 'InternalError') entry.status = 'PartialData';
+        entry.errorCode = err instanceof Error ? err.name : 'UnknownError';
+        entry.messages.push(message);
+        points.set(key, entry);
+      });
+      return points;
+    }
     for (const r of res.MetricDataResults ?? []) appendResult(points, r);
     NextToken = res.NextToken;
   } while (NextToken);
   return points;
 }
 
-function appendResult(points: Map<string, MetricPoint[]>, r: MetricDataResult): void {
+function appendResult(points: Map<string, { points: MetricPoint[]; status?: string; awsStatus?: string; errorCode?: string; messages: string[] }>, r: MetricDataResult): void {
   if (!r.Id) return;
-  const list = points.get(r.Id) ?? [];
+  const entry = points.get(r.Id) ?? { points: [], messages: [] };
+  const list = entry.points;
+  // A later complete page resolves PartialData; errors must never become success.
+  if (entry.status !== 'InternalError' && entry.status !== 'Forbidden') entry.status = r.StatusCode;
+  entry.awsStatus = entry.status;
+  entry.messages.push(...(r.Messages ?? []).map((m) => `${m.Code ?? ''}: ${m.Value ?? ''}`));
   const ts = r.Timestamps ?? [];
   const vs = r.Values ?? [];
   for (let i = 0; i < ts.length; i++) {
@@ -281,7 +301,7 @@ function appendResult(points: Map<string, MetricPoint[]>, r: MetricDataResult): 
     if (v == null || !Number.isFinite(v)) continue;
     list.push({ t: ts[i].getTime(), v });
   }
-  points.set(r.Id, list);
+  points.set(r.Id, entry);
 }
 
 export async function collectMetrics(graph: ResourceGraph, clients: ClientFactory): Promise<MetricsBundle> {
@@ -296,20 +316,24 @@ export async function collectMetrics(graph: ResourceGraph, clients: ClientFactor
   await Promise.all(
     batches.map((batch) =>
       limit(async () => {
-        let result: Map<string, MetricPoint[]>;
+        let result: Map<string, { points: MetricPoint[]; status?: string; awsStatus?: string; errorCode?: string; messages: string[] }>;
+        let batchError: string | undefined;
+        let errorCode: string | undefined;
         try {
           result = await fetchBatch(clients, batch, now);
         } catch (err) {
           // One failed batch should not blank out every other metric.
-          console.warn(`[metrics] GetMetricData 실패 (${batch.region ?? graph.region}, period ${batch.period}): ${err instanceof Error ? err.message : String(err)}`);
-          return;
+          errorCode = err instanceof Error ? err.name : 'UnknownError';
+          batchError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+          result = new Map();
         }
         batch.queries.forEach((q, i) => {
-          const points = (result.get(`q${i}`) ?? []).sort((a, b) => a.t - b.t);
-          if (!points.length) return;
+          const response = result.get(`q${i}`);
+          const points = (response?.points ?? []).sort((a, b) => a.t - b.t);
+          const status = batchError || response?.status === 'Forbidden' || response?.status === 'InternalError' || !response ? 'error' : response.status === 'PartialData' ? 'partial' : points.length ? 'complete' : 'empty';
           const list = series[q.nodeId] ?? (series[q.nodeId] = []);
-          list.push({ name: q.spec.metric, label: q.spec.label, unit: q.spec.unit, stat: q.spec.stat, points, latest: points[points.length - 1]?.v ?? null });
-          if (q.spec.throughput) {
+          list.push({ name: q.spec.metric, label: q.spec.label, unit: q.spec.unit, stat: q.spec.stat, points, latest: points[points.length - 1]?.v ?? null, status, awsStatus: response?.awsStatus, errorCode: errorCode ?? response?.errorCode, messages: batchError ? [batchError] : response?.messages ?? ['CloudWatch 응답에서 지표가 누락되었습니다.'], period: batch.period, startTime: new Date(now.getTime() - batch.window * 1000).toISOString(), endTime: now.toISOString(), fetchedAt: now.toISOString(), lastDataAt: points.length ? new Date(points[points.length - 1].t).toISOString() : undefined, region: batch.region ?? graph.region });
+          if (q.spec.throughput && status === 'complete') {
             const v = recentMean(points, now.getTime());
             if (v != null) trafficInputs.push({ nodeId: q.nodeId, type: q.type, v });
           }
@@ -318,5 +342,5 @@ export async function collectMetrics(graph: ResourceGraph, clients: ClientFactor
     ),
   );
 
-  return { region: graph.region, collectedAt: now.toISOString(), series, traffic: normaliseTraffic(trafficInputs) };
+  return { scope: { source: graph.source, account: graph.account, region: graph.region }, region: graph.region, collectedAt: now.toISOString(), series, traffic: normaliseTraffic(trafficInputs) };
 }

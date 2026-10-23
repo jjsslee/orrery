@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import type { Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
+import type { MonitoringScope, Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
 import { api } from '../api/client';
 import { sameTagFilter, type TagFilter } from './tags';
 import { TYPE_META } from './types';
 
-export type ViewMode = 'topology' | 'types';
+export type ViewMode = 'topology' | 'types' | 'monitoring';
 
 export interface Overlays {
   security: boolean;
@@ -25,7 +25,7 @@ export interface LoadingState {
   startedAt?: number;
 }
 
-interface Persisted { profile?: string; region?: string; theme?: 'dark' | 'light'; live?: boolean }
+interface Persisted { view?: ViewMode; profile?: string; region?: string; theme?: 'dark' | 'light'; live?: boolean }
 
 const PERSIST_KEY = 'orrery.prefs';
 const loadPrefs = (): Persisted => { try { return JSON.parse(localStorage.getItem(PERSIST_KEY) ?? '{}') as Persisted; } catch { return {}; } };
@@ -53,6 +53,8 @@ export interface AppState {
   graph?: ResourceGraph;
   metrics?: MetricsBundle;
   metricsLoading: boolean;
+  metricsError?: string;
+  statusError?: string;
   loading: LoadingState;
 
   view: ViewMode;
@@ -80,6 +82,8 @@ export interface AppState {
   /** Also show resources one hop away from a tagged resource */
   tagNeighbors: boolean;
 
+  connectionGeneration: number;
+  reconnect(): Promise<void>;
   bootstrap(): Promise<void>;
   setProfile(profile: string): Promise<void>;
   setRegion(region: string): Promise<void>;
@@ -112,19 +116,47 @@ export interface AppState {
   setTagNeighbors(v: boolean): void;
 }
 
-let abort: AbortController | undefined;
+type RequestKind = 'graph' | 'metrics' | 'status' | 'identity' | 'regions' | 'bootstrap';
+let scopeGeneration = 0;
+const requests = new Map<RequestKind, AbortController>();
+function beginRequest(kind: RequestKind) {
+  requests.get(kind)?.abort();
+  const controller = new AbortController();
+  requests.set(kind, controller);
+  const generation = scopeGeneration;
+  return { signal: controller.signal, current: () => generation === scopeGeneration && requests.get(kind) === controller && !controller.signal.aborted };
+}
+function cancelRequests() {
+  scopeGeneration++;
+  for (const controller of requests.values()) controller.abort();
+  requests.clear();
+}
 
-/** Regions enabled for the account. With no region chosen nothing is collected, so a failure here is the only place bad credentials show up. */
+/** Late region responses must never replace a newer profile selection. */
 function fetchRegions(profile: string, region: string): void {
-  api.regions(profile)
-    .then(({ regions }) => useStore.setState((s) => ({ regions, loading: region ? s.loading : { ...s.loading, error: undefined } })))
-    .catch((err: Error) => useStore.setState((s) => (region ? { regions: [region] } : { regions: [], loading: { ...s.loading, error: err.message } })));
+  const request = beginRequest('regions');
+  api.regions(profile, request.signal)
+    .then(({ regions }) => { if (request.current()) useStore.setState((s) => ({ regions, loading: region ? s.loading : { ...s.loading, error: undefined } })); })
+    .catch((err: Error) => { if (request.current()) useStore.setState((s) => (region ? { regions: [region] } : { regions: [], loading: { ...s.loading, error: err.message } })); });
+}
+
+function fetchIdentity(profile: string, region: string): void {
+  if (!region) return;
+  const request = beginRequest('identity');
+  void api.identity(profile, region, request.signal).then((id) => { if (request.current()) useStore.setState({ identity: { account: id.account, arn: id.arn } }); }).catch(() => {});
+}
+
+function matchesCurrentScope(scope: MonitoringScope | undefined): boolean {
+  if (!scope) return true; // Older fixtures and cached clients may omit metadata.
+  const { graph, identity, region } = useStore.getState();
+  return (!graph || (graph.account === scope.account && graph.source === scope.source && graph.region === scope.region)) && (!identity || identity.account === scope.account) && region === scope.region;
 }
 
 const ALL_TYPES = Object.keys(TYPE_META) as ResourceType[];
 const ALL_ON: Record<Category, boolean> = { compute: true, network: true, database: true, storage: true, security: true, integration: true };
 
 export const useStore = create<AppState>((set, get) => ({
+  connectionGeneration: 0,
   profiles: [],
   profileChosen: false,
   setup: 'checking',
@@ -137,7 +169,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme: loadPrefs().theme ?? 'dark',
   metricsLoading: false,
   loading: { active: false, reports: {}, order: [] },
-  view: 'topology',
+  view: loadPrefs().view === 'monitoring' ? 'monitoring' : 'topology',
   query: '',
   categories: { compute: true, network: true, database: true, storage: true, security: true, integration: true },
   hiddenTypes: new Set(),
@@ -152,8 +184,10 @@ export const useStore = create<AppState>((set, get) => ({
   tagNeighbors: false,
 
   async bootstrap() {
+    const request = beginRequest('bootstrap');
     document.documentElement.dataset.theme = get().theme;
     const [{ profiles, defaultProfile, packaged }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
+    if (!request.current()) return;
     set({ packaged });
     // Nothing configured on this PC yet: guide the setup rather than try a profile that does not exist.
     if (!profiles.length) {
@@ -166,40 +200,62 @@ export const useStore = create<AppState>((set, get) => ({
     const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
     // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
     set({ profiles, defaultProfile, collectorLabels, profile, region, setup: 'done' });
-    void get().load(false);
+    if (get().view !== 'monitoring') void get().load(false);
+    else fetchIdentity(profile, region);
     fetchRegions(profile, region);
+  },
+
+  async reconnect() {
+    cancelRequests();
+    const { profile, region } = get();
+    set({ connectionGeneration: get().connectionGeneration + 1, graph: undefined, metrics: undefined, identity: undefined, liveBusy: false, metricsLoading: false, loading: { active: true, reports: {}, order: [] } });
+    const r = beginRequest('identity');
+    try {
+      await api.identity(profile, region, r.signal, true);
+      if (!r.current()) return;
+      await get().setProfile(profile);
+    } catch (e) { if (r.current()) set({ loading: { active: false, reports: {}, order: [], error: (e as Error).message } }); }
   },
 
   async setProfile(profile) {
+    cancelRequests();
+    set({ connectionGeneration: get().connectionGeneration + 1, loading: { active: false, reports: {}, order: [] } });
     const p = get().profiles.find((x) => x.name === profile);
     const region = p?.region ?? get().region;
-    set({ profile, region, profileChosen: true, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
+    set({ regions: [], metricsLoading: false, liveBusy: false, metricsError: undefined, statusError: undefined, liveStatusAt: undefined, liveGraphAt: undefined, profile, region, profileChosen: true, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ profile, region });
     fetchRegions(profile, region);
-    await get().load(false);
+    if (get().view !== 'monitoring') await get().load(false);
+    else fetchIdentity(get().profile, region);
   },
 
   async setRegion(region) {
-    set({ region, graph: undefined, metrics: undefined, selectedId: undefined, expanded: new Set(), tagFilters: [] });
+    cancelRequests();
+    set({ metricsLoading: false, liveBusy: false, metricsError: undefined, statusError: undefined, liveStatusAt: undefined, liveGraphAt: undefined, identity: undefined, region, graph: undefined, metrics: undefined, selectedId: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ region });
-    await get().load(false);
+    fetchRegions(get().profile, region);
+    if (get().view !== 'monitoring') await get().load(false);
+    else fetchIdentity(get().profile, region);
   },
 
   async load(refresh = false, opts = {}) {
     if (!get().region) return;
     const silent = Boolean(opts.silent && get().graph);
-    if (!silent) { abort?.abort(); abort = new AbortController(); }
+    const request = beginRequest('graph');
+    // A new graph invalidates dependent responses even when the selected scope is unchanged.
+    for (const kind of ['status', 'identity', 'metrics'] as const) { requests.get(kind)?.abort(); requests.delete(kind); }
+    set({ liveBusy: false, metricsLoading: false });
     const { profile, region, collectorLabels } = get();
     const order = Object.keys(collectorLabels);
     if (!silent) set({ loading: { active: true, reports: {}, order, startedAt: Date.now() }, metrics: undefined });
     else set({ liveBusy: true });
     try {
       const graph = await api.streamGraph(profile, region, refresh, (e) => {
-        if (silent) return;
+        if (silent || !request.current()) return;
         if (e.type === 'start') set((s) => ({ identity: { account: e.account, arn: s.identity?.arn ?? '' }, loading: { ...s.loading, order: e.collectors.length ? e.collectors : s.loading.order } }));
         if (e.type === 'collector') set((s) => ({ loading: { ...s.loading, reports: { ...s.loading.reports, [e.report.collector]: e.report } } }));
-      }, silent ? undefined : abort?.signal);
-      if (get().profile !== profile || get().region !== region) return;
+      }, request.signal);
+      if (!request.current()) return;
       if (silent) {
         // Keep the existing layout calm: only swap the data, mark what changed, no refit, no metrics (metered).
         const prev = new Map(get().graph?.nodes.map((n) => [n.id, n]));
@@ -209,19 +265,24 @@ export const useStore = create<AppState>((set, get) => ({
         set({ graph, liveGraphAt: now, liveBusy: false, changed });
         return;
       }
-      set({ graph, loading: { active: false, reports: {}, order }, fitRequest: get().fitRequest + 1, changed: {} });
+      const errors = [graph.statusObservation?.error, graph.alarmObservation?.error].filter(Boolean);
+      set({ statusError: errors.length ? `일부 상태 조회 실패 · 이전 상태가 포함됩니다: ${errors.join(' / ')}` : undefined, graph, loading: { active: false, reports: {}, order }, fitRequest: get().fitRequest + 1, changed: {} });
       savePrefs({ profile, region });
-      void api.identity(profile, region).then((id) => set({ identity: { account: id.account, arn: id.arn } })).catch(() => {});
-      void get().loadMetrics(refresh);
+      const identityRequest = beginRequest('identity');
+      void api.identity(profile, region, identityRequest.signal).then((id) => { if (identityRequest.current()) set({ identity: { account: id.account, arn: id.arn } }); }).catch(() => {});
+
     } catch (err) {
+      if (!request.current()) return;
       if ((err as Error).name === 'AbortError') return;
-      if (silent) { console.warn('live re-collect failed', err); set({ liveBusy: false }); return; }
+      if (silent) { set({ liveBusy: false, statusError: `구성 조회 실패 · 이전 구성을 표시합니다: ${(err as Error).message}` }); return; }
       // A saved-but-broken profile (401) that the user did not pick this session: fall back to the server default.
       const { defaultProfile, profileChosen } = get();
       if ((err as { status?: number }).status === 401 && !profileChosen && defaultProfile && defaultProfile !== profile) {
         console.info(`[orrery] profile '${profile}' failed to authenticate; switching to '${defaultProfile}'`);
-        await get().setProfile(defaultProfile);
-        set({ profileChosen: false });
+        const fallback = get().setProfile(defaultProfile);
+        const fallbackGeneration = scopeGeneration;
+        await fallback;
+        if (scopeGeneration === fallbackGeneration) set({ profileChosen: false });
         return;
       }
       set((s) => ({ loading: { ...s.loading, active: false, error: (err as Error).message } }));
@@ -231,7 +292,7 @@ export const useStore = create<AppState>((set, get) => ({
   setLive: (live) => { savePrefs({ live }); set({ live }); },
 
   async quitApp() {
-    abort?.abort();
+    cancelRequests();
     await api.quit();
     set({ closed: true, live: false });
   },
@@ -240,11 +301,13 @@ export const useStore = create<AppState>((set, get) => ({
   async refreshStatus() {
     const { profile, region, graph } = get();
     if (!graph || get().liveBusy) return;
-    set({ liveBusy: true });
+    const request = beginRequest('status');
+    set({ liveBusy: true, statusError: undefined });
     try {
-      const bundle = await api.status(profile, region);
+      const bundle = await api.status(profile, region, request.signal);
       const current = get().graph;
-      if (!current || get().profile !== profile || get().region !== region) return;
+      if (!current || !request.current()) return;
+      if (!matchesCurrentScope(bundle.scope)) { set({ statusError: 'AWS 계정 또는 인증 소스가 바뀌었습니다. 이전 상태를 표시합니다. 다시 연결로 계정을 확인하세요.' }); return; }
       const now = Date.now();
       const changed: Record<string, number> = {};
       const nodes = current.nodes.map((n) => {
@@ -254,28 +317,47 @@ export const useStore = create<AppState>((set, get) => ({
         return { ...n, status: f.status, statusLabel: f.statusLabel, alarms: f.alarms, props: { ...n.props, ...f.props } };
       });
       const edges = current.edges.map((e) => (bundle.edges[e.id] && bundle.edges[e.id] !== e.status ? { ...e, status: bundle.edges[e.id] } : e));
-      set({ graph: { ...current, nodes, edges }, liveStatusAt: now, changed: Object.keys(changed).length ? changed : get().changed });
+      const failed = bundle.reports.filter((r) => !r.ok).map((r) => `${r.collector}: ${r.error ?? '조회 실패'}`);
+      const observationErrors = [bundle.statusObservation?.error, bundle.alarmObservation?.error].filter(Boolean);
+      const errors = [...new Set([...observationErrors, ...failed])];
+      set({ statusError: errors.length ? `일부 상태 조회 실패 · 이전 상태가 포함됩니다: ${errors.join(' / ')}` : undefined, graph: { ...current, nodes, edges, statusObservation: bundle.statusObservation, alarmObservation: bundle.alarmObservation }, liveStatusAt: bundle.statusObservation?.succeededAt ? Date.parse(bundle.statusObservation.succeededAt) : (errors.length ? get().liveStatusAt : now), changed: Object.keys(changed).length ? changed : get().changed });
     } catch (err) {
-      console.warn('status refresh failed', err);
+      if (request.current()) set({ statusError: `상태 조회 실패 · 이전 상태를 표시합니다: ${(err as Error).message}` });
     } finally {
-      set({ liveBusy: false });
+      if (request.current()) set({ liveBusy: false });
     }
   },
 
   async loadMetrics(refresh = false) {
     const { profile, region } = get();
-    set({ metricsLoading: true });
+    const request = beginRequest('metrics');
+    set({ metricsLoading: true, metricsError: undefined });
     try {
-      const metrics = await api.metrics(profile, region, refresh);
-      if (get().profile === profile && get().region === region) set({ metrics });
+      const metrics = await api.metrics(profile, region, refresh, request.signal);
+      if (request.current()) {
+        if (!matchesCurrentScope(metrics.scope)) { set({ metricsError: 'AWS 계정 또는 인증 소스가 바뀌었습니다. 다른 계정의 지표를 표시하지 않습니다. 다시 연결로 계정을 확인하세요.' }); return; }
+        set({ metrics });
+      }
     } catch (err) {
-      console.warn('metrics unavailable', err);
+      if (request.current()) set({ metricsError: `지표 조회 실패 · 이전 값이 있으면 유지합니다: ${(err as Error).message}` });
     } finally {
-      set({ metricsLoading: false });
+      if (request.current()) set({ metricsLoading: false });
     }
   },
 
-  setView: (view) => set({ view }),
+  setView: (view) => {
+    if (view === get().view) return;
+    if (view === 'monitoring') {
+      cancelRequests();
+      set({ view, loading: { active: false, reports: {}, order: [] }, metricsLoading: false, liveBusy: false });
+      fetchRegions(get().profile, get().region);
+      fetchIdentity(get().profile, get().region);
+    } else {
+      set({ view });
+      if (!get().graph && get().region) void get().load();
+    }
+    savePrefs({ view });
+  },
   select: (selectedId, opts) => {
     set({ selectedId });
     if (opts?.reveal && selectedId) {
@@ -284,7 +366,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (node) set((s) => ({ expanded: new Set([...s.expanded, aggregateKeyFor(node)]) }));
     }
   },
-  locate: (id) => set((s) => ({ view: 'topology', selectedId: id, locateRequest: { id, seq: (s.locateRequest?.seq ?? 0) + 1 } })),
+  locate: (id) => {
+    get().setView('topology');
+    set((s) => ({ selectedId: id, locateRequest: { id, seq: (s.locateRequest?.seq ?? 0) + 1 } }));
+  },
   hover: (hoverId) => set({ hoverId }),
   setQuery: (query) => set({ query }),
   // A category checkbox is the union of its types: any visible → hide all, none visible → show all.

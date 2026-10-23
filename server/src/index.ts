@@ -7,9 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { EC2Client, DescribeRegionsCommand } from '@aws-sdk/client-ec2';
 import type { CollectEvent, MetricsBundle, ResourceGraph, StatusBundle } from '@orrery/shared';
+import { SessionRegistry, scopeKey } from './aws/sessions.ts';
 import { ClientFactory } from './aws/clients.ts';
 import { defaultRegionFor, describeSource, listProfiles, resolveCredentials, sourceFromQuery } from './aws/credentials.ts';
 import { collectorLabels, runCollectors } from './collectors/index.ts';
+import { mergeStatus, preserveAlarmSnapshot } from './graph/status.ts';
+import { AlarmRepository, graphAlarmInfos } from './monitoring/alarms.ts';
+import { registerMonitoringRoutes } from './monitoring/routes.ts';
 import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
@@ -78,9 +82,10 @@ interface Session {
   clients: ClientFactory;
   account: string;
   arn: string;
+  credentialsExpireAt?: number;
 }
 
-const sessions = new Map<string, Promise<Session>>();
+const sessions = new SessionRegistry<Session>(5 * 60_000, (s) => s.credentialsExpireAt);
 
 async function session(query: Record<string, unknown>): Promise<Session> {
   const spec = sourceFromQuery(query);
@@ -88,9 +93,7 @@ async function session(query: Record<string, unknown>): Promise<Session> {
   if (!/^[a-z]{2}(-[a-z]+)+-\d$/.test(region)) throw Object.assign(new Error(`리전이 올바르지 않습니다: ${region}`), { statusCode: 400 });
   const source = describeSource(spec);
   const key = `${source}@${region}`;
-  let pending = sessions.get(key);
-  if (!pending) {
-    pending = (async () => {
+  return sessions.get(key, async () => {
       const clients = new ClientFactory(region, resolveCredentials(spec));
       const sts = clients.get(STSClient);
       let id;
@@ -100,23 +103,37 @@ async function session(query: Record<string, unknown>): Promise<Session> {
         clients.destroy();
         throw Object.assign(new Error(describeCredentialError(err, source)), { statusCode: 401 });
       }
-      return { spec, source, region, clients, account: id.Account ?? 'unknown', arn: id.Arn ?? '' };
-    })();
-    sessions.set(key, pending);
-    pending.catch(() => sessions.delete(key));
-  }
-  return pending;
+      return { spec, source, region, clients, account: id.Account ?? 'unknown', arn: id.Arn ?? '', credentialsExpireAt: clients.credentialsExpireAt };
+    }, query.reconnect === '1');
 }
 
-const graphKey = (s: Session) => `graph_${s.source}_${s.region}`;
+const alarmRepository = new AlarmRepository();
+registerMonitoringRoutes(app, session, alarmRepository);
+
+async function alarmOutput(s: Session) {
+  const started = Date.now();
+  const snapshot = await alarmRepository.get(s);
+  return { observation: snapshot.observation, output: { nodes: [], edges: [], alarms: graphAlarmInfos(snapshot.alarms) }, report: { collector: 'alarms', ok: snapshot.complete, durationMs: Date.now() - started, nodes: 0, edges: 0, error: snapshot.observation.error } };
+}
+
+const graphKey = (s: Session) => scopeKey('graph-v2', s.source, s.account, s.region);
 
 async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Promise<ResourceGraph> {
+  const previous = await cache.get<ResourceGraph>(graphKey(s), Infinity);
   onEvent?.({ type: 'start', collectors: Object.keys(collectorLabels()), account: s.account, region: s.region });
   const { outputs, reports } = await runCollectors(
     { region: s.region, account: s.account, clients: s.clients, log: (m) => app.log.warn(m) },
     (report) => onEvent?.({ type: 'collector', report }),
+    Object.keys(collectorLabels()).filter((name) => name !== 'alarms'),
   );
+  const alarm = await alarmOutput(s);
+  outputs.push(alarm.output);
+  reports.push(alarm.report);
+  onEvent?.({ type: 'collector', report: alarm.report });
   const graph = assembleGraph(outputs, reports, { account: s.account, region: s.region, source: s.source });
+  const alarmReport = reports.find((r) => r.collector === 'alarms');
+  graph.alarmObservation = alarm.observation;
+  if (!alarmReport?.ok) preserveAlarmSnapshot(graph, previous);
   await cache.set(graphKey(s), graph);
   return graph;
 }
@@ -194,8 +211,7 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
 });
 
 /** Collectors that carry runtime state; the live status pass re-runs only these (all free API calls). */
-const STATUS_COLLECTORS = ['ec2', 'elb', 'rds', 'ecs', 'alarms', 'network', 'elasticache'];
-const STATUS_PROPS = ['상태 검사', '희망/실행 작업', '실행 작업', '정상/전체', '현재 인스턴스', '배포 상태'];
+const STATUS_COLLECTORS = ['ec2', 'elb', 'rds', 'ecs', 'network', 'elasticache'];
 
 /**
  * Status-only refresh: re-reads instance state, target health, ECS task counts,
@@ -211,36 +227,20 @@ app.get<{ Querystring: Record<string, string> }>('/api/status', async (req) => {
     undefined,
     STATUS_COLLECTORS,
   );
-  const fresh = assembleGraph(outputs, reports, { account: s.account, region: s.region, source: s.source });
-  const bundle: StatusBundle = { collectedAt: fresh.collectedAt, checked: 0, nodes: {}, edges: {}, durationMs: 0, reports };
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  for (const n of fresh.nodes) {
-    const old = byId.get(n.id);
-    if (!old) continue;
-    bundle.checked++;
-    const props: Record<string, string | number | boolean | null> = {};
-    for (const k of STATUS_PROPS) if (k in n.props) props[k] = n.props[k];
-    bundle.nodes[n.id] = { status: n.status, statusLabel: n.statusLabel, alarms: n.alarms, props };
-    old.status = n.status;
-    old.statusLabel = n.statusLabel;
-    old.alarms = n.alarms;
-    Object.assign(old.props, props);
-  }
-  const oldEdges = new Map(graph.edges.map((e) => [e.id, e]));
-  for (const e of fresh.edges) {
-    const old = oldEdges.get(e.id);
-    if (!old || !e.status) continue;
-    bundle.edges[e.id] = e.status;
-    old.status = e.status;
-  }
-  await cache.set(graphKey(s), graph);
+  const alarm = await alarmOutput(s);
+  outputs.push(alarm.output);
+  reports.push(alarm.report);
+  const bundle = mergeStatus(graph, outputs, reports);
+  graph.alarmObservation = { ...alarm.observation, succeededAt: alarm.observation.succeededAt ?? graph.alarmObservation?.succeededAt };
+  bundle.alarmObservation = graph.alarmObservation;
+  await cache.update(graphKey(s), graph, graph);
   bundle.durationMs = Date.now() - started;
   return bundle;
 });
 
 app.get<{ Querystring: Record<string, string> }>('/api/metrics', async (req) => {
   const s = await session(req.query);
-  const key = `metrics_${s.source}_${s.region}`;
+  const key = scopeKey('metrics-v3', s.source, s.account, s.region);
   if (req.query.refresh !== '1') {
     const cached = await cache.get<MetricsBundle>(key, METRICS_TTL);
     if (cached) return cached;

@@ -13,6 +13,7 @@ export function Inspector() {
   const graph = useStore((s) => s.graph);
   const selectedId = useStore((s) => s.selectedId);
   const metrics = useStore((s) => s.metrics);
+  const metricsError = useStore((s) => s.metricsError);
   const metricsLoading = useStore((s) => s.metricsLoading);
   const select = useStore((s) => s.select);
   const addTagFilter = useStore((s) => s.addTagFilter);
@@ -75,16 +76,18 @@ export function Inspector() {
           </section>
         )}
 
-        {(series.length > 0 || metricsLoading) && (
+        {(series.length > 0 || metricsLoading || metricsError) && (
           <section className="insp-section">
             <div className="insp-section-head">
-              <h3>최근 3시간</h3>
+              <h3>CloudWatch 지표</h3>
               {series.length > 0 && (
                 <button type="button" className="link-btn" onClick={() => setTableView((v) => !v)} aria-pressed={tableView}>
                   {tableView ? <><LineChart size={12} /> 차트</> : <><TableIcon size={12} /> 표</>}
                 </button>
               )}
             </div>
+            {metricsError && <div role="status" className="muted">{metricsError}</div>}
+            {metrics?.collectedAt && <div className="muted">조회 {fmtDateTime(metrics.collectedAt)}</div>}
             {series.length === 0 && metricsLoading && <div className="muted">지표를 불러오는 중</div>}
             {tableView ? (
               <table className="metric-table">
@@ -99,6 +102,13 @@ export function Inspector() {
               series.map((s) => (
                 <div className="metric" key={s.name}>
                   <div className="metric-head"><span className="metric-label">{s.label}</span><span className="metric-value tnum">{fmtNumber(s.latest, s.unit)}</span></div>
+                  <div className="muted">
+                    {s.startTime && s.endTime && <span>{fmtDateTime(s.startTime)} ~ {fmtDateTime(s.endTime)} · </span>}
+                    {s.period && <span>{s.period >= 86400 ? `${s.period / 86400}일` : `${s.period / 60}분`} 집계 · </span>}
+                    {s.status === 'error' ? '조회 실패' : s.status === 'partial' ? '부분 결과' : s.status === 'empty' ? '데이터 없음' : '조회 완료'}
+                    {s.lastDataAt && <span> · 최신 값 {fmtDateTime(s.lastDataAt)}</span>}
+                    {s.messages?.length ? <span role="status"> · {s.messages.join(' / ')}</span> : null}
+                  </div>
                   <Sparkline series={s} width={312} height={48} color={`var(--cat-${node.category})`} />
                 </div>
               ))

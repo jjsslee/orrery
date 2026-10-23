@@ -1,11 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 interface Entry<T> { value: T; storedAt: number }
 
 /**
  * Small two-tier cache: memory first, then a JSON file so `npm run dev`
- * restarts do not hit AWS again. Keys are sanitised into file names.
+ * restarts do not hit AWS again. Keys are hashed into collision-resistant file names.
  */
 export class Cache {
   private readonly mem = new Map<string, Entry<unknown>>();
@@ -35,7 +36,15 @@ export class Cache {
     } catch { /* best effort */ }
   }
 
+  async update<T>(key: string, value: T, expected?: T): Promise<void> {
+    const entry = this.mem.get(key);
+    if (!entry || (expected !== undefined && entry.value !== expected)) return;
+    const next = { ...entry, value };
+    this.mem.set(key, next);
+    try { await writeFile(this.file(key), JSON.stringify(next)); } catch { /* best effort */ }
+  }
+
   private file(key: string): string {
-    return join(this.dir, `${key.replace(/[^A-Za-z0-9_.-]+/g, '_')}.json`);
+    return join(this.dir, `${createHash('sha256').update(key).digest('hex')}.json`);
   }
 }

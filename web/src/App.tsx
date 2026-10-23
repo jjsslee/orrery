@@ -8,6 +8,7 @@ import { Topology } from './canvas/Topology';
 import { LoadOverlay } from './canvas/LoadOverlay';
 import { RegionPrompt } from './canvas/RegionPrompt';
 import { SetupGuide } from './canvas/SetupGuide';
+import { Monitoring } from './views/Monitoring';
 import { TypeView } from './views/TypeView';
 import { BrandMark } from './components/Brand';
 
@@ -28,7 +29,7 @@ export default function App() {
   // only while the tab is visible. CloudWatch metrics (metered) are never refreshed here.
   const live = useStore((s) => s.live);
   useEffect(() => {
-    if (!live) return;
+    if (!live || view === 'monitoring') return;
     let statusTimer: ReturnType<typeof setInterval> | undefined;
     let graphTimer: ReturnType<typeof setInterval> | undefined;
     const start = () => {
@@ -42,7 +43,7 @@ export default function App() {
     onVisibility();
     document.addEventListener('visibilitychange', onVisibility);
     return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [live]);
+  }, [live, view]);
 
   // Fade the "changed" highlight after a few seconds
   const changed = useStore((s) => s.changed);
@@ -79,16 +80,18 @@ export default function App() {
   }
 
   return (
-    <div className={`app ${selectedId ? 'has-inspector' : ''}`}>
+    <div className={`app ${view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''}`}>
       <TopBar />
-      <Rail />
-      <main className="stage" aria-label={view === 'topology' ? '토폴로지' : '유형별 보기'}>
+      {view !== 'monitoring' && <Rail />}
+      <main className="stage" aria-label={view === 'monitoring' ? '모니터링' : view === 'topology' ? '토폴로지' : '유형별 보기'}>
+        {view === 'monitoring' ? <Monitoring /> : <>
         {view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
         <LoadOverlay />
         {setup === 'needed' && <SetupGuide />}
         {setup === 'done' && !graph && idle && (region ? <div className="empty">프로필을 선택하면 수집을 시작합니다.</div> : <RegionPrompt />)}
+        </>}
       </main>
-      {selectedId && <Inspector />}
+      {view !== 'monitoring' && selectedId && <Inspector />}
     </div>
   );
 }

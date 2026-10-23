@@ -82,3 +82,10 @@ test('normaliseTraffic is log-scaled per type and omits zero', () => {
   assert.equal('c' in out, false);
   assert.equal(out.d, 1);
 });
+
+test('metrics bundle identifies actual account/source independently of profile name', async () => {
+  const { collectMetrics } = await import('./cloudwatch.ts');
+  const graph = { account: '111111111111', source: 'profile:same-profile', region: 'ap-northeast-2', collectedAt: new Date().toISOString(), nodes: [], edges: [], reports: [] };
+  const bundle = await collectMetrics(graph, {} as import('../aws/clients.ts').ClientFactory);
+  assert.deepEqual((bundle as unknown as { scope: unknown }).scope, { source: graph.source, account: graph.account, region: graph.region });
+});
