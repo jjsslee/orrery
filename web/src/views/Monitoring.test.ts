@@ -4,26 +4,60 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Monitoring } from './Monitoring';
-import { MonitoringMetrics } from './MonitoringMetrics';
 import { useMonitoring } from '../model/monitoring';
 import { useStore } from '../model/store';
 
-test('resource discovery exposes tag search and grouping directly without opening overview', () => {
-  // SSR uses Zustand's initial snapshot, just as the first browser render does.
+const scope = { source: 'profile:fixture', account: '000000000000', region: 'ap-northeast-2' };
+const observed = { attemptedAt: '2026-10-23T00:00:00Z', succeededAt: '2026-10-23T00:00:00Z' };
+const resource = (key: string, name: string) => ({ key, nodeId: key, name, nativeId: key, type: 'lambda' as const, region: scope.region, tags: { Service: 'fixture-wiki' }, tagsStatus: 'complete' as const, props: {} });
+function render(patch = {}) {
   const app = useStore.getInitialState(), monitoring = useMonitoring.getInitialState();
   const previousApp = { ...app }, previousMonitoring = { ...monitoring };
-  Object.assign(app, { setup: 'done', profile: 'fixture', region: 'ap-northeast-2' });
-  Object.assign(monitoring, { activeTab: 'resources', resources: undefined, groups: [] });
-  try {
-    const html = renderToStaticMarkup(createElement(Monitoring));
-    assert.match(html, /태그로 조회/);
-    assert.match(html, /태그 없는 자원/);
-    assert.match(html, /지원 6유형 조회/);
-    assert.match(html, /묶음에 추가할 자원/);
-  } finally { Object.assign(app, previousApp); Object.assign(monitoring, previousMonitoring); }
+  Object.assign(app, { setup: 'done', profile: 'fixture', region: scope.region, loading: { active: false, reports: {}, order: [] } });
+  Object.assign(monitoring, { resources: { scope, resources: [resource('one', 'fixture-worker')], types: ['lambda'], complete: true, observation: observed }, resourceLoading: false, resourceError: undefined, selectedResources: [], groups: [], alarms: { scope, alarms: [], complete: true, observation: observed }, ...patch });
+  try { return renderToStaticMarkup(createElement(Monitoring)); }
+  finally { Object.assign(app, previousApp); Object.assign(monitoring, previousMonitoring); }
+}
+
+test('first render is a resource workspace with search, explicit add, same-screen CloudWatch and related evidence', () => {
+  const html = render();
+  assert.match(html, /aria-label="자원 검색"/);
+  assert.match(html, /fixture-worker 추가/);
+  assert.match(html, /mw-tag-picker[^>]*open/);
+  assert.match(html, /aria-label="태그 키"/);
+  assert.match(html, /aria-label="태그 값"/);
+  assert.match(html, /CloudWatch/);
+  assert.match(html, /선으로 연결된 자원/);
+  assert.match(html, /같은 태그의 자원/);
+  assert.doesNotMatch(html, /모니터링 화면|묶음에 추가할 자원|선택 자원 지표 보기|지원 6유형 조회/);
 });
 
-test('metric comparison exposes a display filter for query problems', () => {
-  const html = renderToStaticMarkup(createElement(MonitoringMetrics));
-  assert.match(html, /조회 문제만 보기/);
+test('selection renders resource-specific charts and alarms in the workspace without a separate metric menu', () => {
+  const html = render({ selectedResources: ['one'], referenceResource: 'one', metrics: { scope, collectedAt: observed.succeededAt, range: { startTime: observed.attemptedAt, endTime: observed.attemptedAt }, queryCount: 1, requestCount: 1, maxRequests: 10, series: { one: [{ id: 'Invocations:Sum', name: 'Invocations', label: '호출 수', stat: 'Sum', unit: 'Count', latest: 0, points: [{ t: Date.parse(observed.attemptedAt), v: 0 }], status: 'complete', period: 60 }] } }, alarms: { scope, observation: observed, complete: true, alarms: [{ name: 'fixture-alarm', state: 'ALARM', type: 'metric', region: scope.region, metrics: [], mapping: 'matched', resourceKeys: ['one'] }] } });
+  assert.match(html, /fixture-worker/);
+  assert.match(html, /호출 수/);
+  assert.match(html, /fixture-alarm/);
+  assert.ok(html.indexOf('fixture-alarm') < html.indexOf('호출 수'));
+  assert.match(html, /유료|비용/);
+  assert.match(html, /fixture-worker 제거/);
+  assert.doesNotMatch(html, /자원 찾기에서 최대 4개를 선택|선택 지표 조회/);
+});
+
+test('related candidates retain exact tag evidence, connection direction and provenance limits', () => {
+  const candidate = resource('two', 'fixture-queue');
+  const html = render({ selectedResources: ['one'], referenceResource: 'one', related: { scope, resourceKey: 'one', connected: [{ resource: candidate, reasons: [{ kind: 'edge', direction: 'incoming', edgeKind: 'invokes', label: 'fixture trigger', evidence: 'unknown' }] }], sameTags: [{ resource: candidate, reasons: [{ kind: 'tag', key: 'Service', value: 'fixture-wiki' }] }], graph: { state: 'partial', observation: { ...observed, error: 'fixture partial' } }, tagCoverage: { types: ['lambda'], incompleteTypes: ['sqs-queue'] } } });
+  assert.match(html, /fixture-queue 추가/);
+  assert.match(html, /Service/); assert.match(html, /fixture-wiki/);
+  assert.match(html, /들어오는|기준 자원으로/);
+  assert.match(html, /직접 확인·추정 구분 미제공/);
+  assert.match(html, /일부|부분/);
+});
+
+test('unsupported metrics and regional alarm mapping limits cannot be mistaken for a healthy resource', () => {
+  const html = render({ selectedResources: ['one'], referenceResource: 'one', resources: { scope, resources: [{ ...resource('one', 'fixture-global'), metricsSupported: false, metricsUnsupportedReason: 'fixture 지표 미지원', alarmMappingSupported: false, alarmScopeWarning: 'fixture 글로벌 경보는 선택 리전의 조회 범위입니다.' }], types: [], complete: false, observation: observed }, related: { scope, resourceKey: 'one', connected: [], sameTags: [], graph: { state: 'loading' }, tagCoverage: { types: [], incompleteTypes: ['lambda'] } } });
+  assert.match(html, /fixture 지표 미지원/);
+  assert.match(html, /경보 유무를 판단할 수 없습니다/);
+  assert.match(html, /fixture 글로벌 경보는 선택 리전의 조회 범위/);
+  assert.match(html, /연결 구성 확인 중/);
+  assert.doesNotMatch(html, /이 자원에 매핑된 경보가 없습니다|선으로 연결된 자원을 찾지 못했습니다/);
 });

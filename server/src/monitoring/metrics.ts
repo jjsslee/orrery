@@ -47,6 +47,7 @@ export function planMetrics(input: MonitoringMetricRequest, known: MonitoringRes
     const resource = known.find((r) => r.key === key);
     if (!resource) return bad('현재 계정·리전에서 먼저 조회한 자원만 선택할 수 있습니다. 자원 목록을 갱신하세요.');
     const queries = monitoringQueries(resource);
+    if (!queries.length) return bad(resource.metricsUnsupportedReason ?? '이 자원의 CloudWatch 지표 프리셋은 아직 지원하지 않습니다.');
     if (resource.type === 'lambda') available.add('ErrorRate:derived');
     for (const query of queries) {
       const id = metricId(query);

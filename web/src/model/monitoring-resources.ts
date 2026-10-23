@@ -8,7 +8,7 @@ export const emptyResourceFilters = (): ResourceFilters => ({ query: '', tags: [
 export function filterMonitoringResources(resources: MonitoringResource[], filters: ResourceFilters): MonitoringResource[] {
   const query = filters.query.trim().toLocaleLowerCase();
   return resources.filter((resource) => {
-    if (query && !`${resource.name} ${resource.nativeId} ${resource.type}`.toLocaleLowerCase().includes(query)) return false;
+    if (query && !`${resource.name} ${resource.nativeId} ${resource.type} ${Object.entries(resource.tags ?? {}).flat().join(' ')}`.toLocaleLowerCase().includes(query)) return false;
     if (filters.tagStatus === 'unavailable' && resource.tagsStatus !== 'unavailable') return false;
     if (filters.tagStatus === 'untagged' && (resource.tagsStatus !== 'complete' || Object.keys(resource.tags ?? {}).length > 0)) return false;
     // These modes find extra manual candidates without discarding the saved tag conditions.

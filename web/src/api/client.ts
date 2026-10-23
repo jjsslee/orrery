@@ -1,4 +1,4 @@
-import type { CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, AlarmHistorySnapshot, MonitoringMetricsSnapshot } from '@orrery/shared';
+import type { CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, AlarmHistorySnapshot, MonitoringMetricsSnapshot, MonitoringRelatedSnapshot, MonitoringResourceResolution } from '@orrery/shared';
 
 const q = (params: Record<string, string | undefined>) =>
   new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]))).toString();
@@ -25,7 +25,9 @@ export const api = {
   status: (profile: string, region: string, signal?: AbortSignal) => json<StatusBundle>(`/api/status?${q({ profile, region })}`, signal),
 
   monitoringAlarms: (profile: string, region: string, refresh = false, signal?: AbortSignal) => json<MonitoringAlarmSnapshot>(`/api/monitoring/alarms?${q({ profile, region, refresh: refresh ? '1' : undefined })}`, signal),
-  monitoringResources: (profile: string, region: string, type: MonitoringResourceType, signal?: AbortSignal) => json<MonitoringResourceIndex>(`/api/monitoring/resources?${q({ profile, region, type })}`, signal),
+  monitoringResources: (profile: string, region: string, type: MonitoringResourceType, signal?: AbortSignal, refresh = false) => json<MonitoringResourceIndex>(`/api/monitoring/resources?${q({ profile, region, type, refresh: refresh ? '1' : undefined })}`, signal),
+  monitoringRelated: (profile: string, region: string, resourceKey: string, signal?: AbortSignal, refresh = false) => json<MonitoringRelatedSnapshot>(`/api/monitoring/related?${q({ profile, region, resourceKey, connections: '1', refresh: refresh ? '1' : undefined })}`, signal),
+  monitoringResolve: (profile: string, region: string, resourceKeys: string[], signal?: AbortSignal) => json<MonitoringResourceResolution>(`/api/monitoring/resources/resolve?${q({ profile, region })}`, signal, { resourceKeys }),
   monitoringMetrics: (profile: string, region: string, resourceKeys: string[], range: { startTime: string; endTime: string }, refresh = false, signal?: AbortSignal) => json<MonitoringMetricsSnapshot>(`/api/monitoring/metrics?${q({ profile, region })}`, signal, { resourceKeys, range, refresh }),
   monitoringHistory: (profile: string, region: string, name: string, type: 'metric' | 'composite', window: { start: string; end: string }, nextToken?: string, signal?: AbortSignal) => json<AlarmHistorySnapshot>(`/api/monitoring/alarms/history?${q({ profile, region, name, type, ...window, nextToken })}`, signal),
 

@@ -1,6 +1,7 @@
 import { CloudWatchClient, DescribeAlarmsCommand, DescribeAlarmHistoryCommand, type MetricAlarm, type CompositeAlarm } from '@aws-sdk/client-cloudwatch';
 import type { AlarmRecord, AlarmMetric, AlarmInfo, MonitoringAlarmSnapshot, MonitoringScope, MonitoringResource, AlarmHistorySnapshot } from '@orrery/shared';
 import type { ClientFactory } from '../aws/clients.ts';
+import { queriesForNode } from '../metrics/cloudwatch.ts';
 import { scopeKey } from '../aws/sessions.ts';
 
 export interface MonitoringSession extends MonitoringScope { clients: ClientFactory }
@@ -30,20 +31,9 @@ export function alarmRecord(a: MetricAlarm | CompositeAlarm, region: string): Al
 
 /** Keep every alarm. Only exact supported dimension sets establish resource links. */
 export function mapAlarms(alarms: AlarmRecord[], resources: MonitoringResource[]): AlarmRecord[] {
-  const matches = (m: AlarmMetric, r: MonitoringResource) => {
-    const d = m.dimensions;
-    switch (r.type) {
-      case 'lambda': return m.namespace === 'AWS/Lambda' && d.FunctionName === r.nativeId;
-      case 'sqs-queue': return m.namespace === 'AWS/SQS' && d.QueueName === r.nativeId;
-      case 'ec2-instance': return m.namespace === 'AWS/EC2' && d.InstanceId === r.nativeId;
-      case 'rds-instance': return m.namespace === 'AWS/RDS' && d.DBInstanceIdentifier === r.nativeId;
-      case 'ecs-service': return m.namespace === 'AWS/ECS' && `${d.ClusterName}/${d.ServiceName}` === r.nativeId;
-      case 'load-balancer': return m.namespace === 'AWS/ApplicationELB' && d.LoadBalancer === r.nativeId.split('loadbalancer/')[1];
-      default: return false;
-    }
-  };
+  const matches = (m: AlarmMetric, r: MonitoringResource, region: string) => queriesForNode({ id: r.key, type: r.type, nativeId: r.nativeId, name: r.name, arn: r.arn, region: r.region, category: 'compute', status: 'unknown', props: r.props }).some((query) => (query.region ?? r.region) === region && query.spec.namespace === m.namespace && query.dims.length > 0 && query.dims.every((d) => d.Name && d.Value && m.dimensions[d.Name] === d.Value));
   return alarms.map((alarm) => {
-    const resourceKeys = resources.filter((r) => r.region === alarm.region && alarm.metrics.some((m) => matches(m, r))).map((r) => r.key);
+    const resourceKeys = resources.filter((r) => alarm.metrics.some((m) => matches(m, r, alarm.region))).map((r) => r.key);
     return { ...alarm, resourceKeys, mapping: resourceKeys.length ? 'matched' : 'unresolved' };
   });
 }
@@ -95,8 +85,9 @@ export async function alarmHistory(s: MonitoringSession, query: Record<string, s
   const start = Date.parse(query.start), end = Date.parse(query.end);
   if (!query.name || query.name.length > 255 || !['metric', 'composite'].includes(query.type) || !Number.isFinite(start) || !Number.isFinite(end) || start >= end || end - start > 30 * 86400_000 || end > Date.now() + 60_000 || (query.nextToken?.length ?? 0) > 4096) throw Object.assign(new Error('경보 이름·유형과 최대 30일의 조회 기간을 확인하세요.'), { statusCode: 400 });
   const attemptedAt = new Date().toISOString();
+  const scope = { source: s.source, account: s.account, region: s.region };
   try {
     const page = await s.clients.get(CloudWatchClient).send(new DescribeAlarmHistoryCommand({ AlarmName: query.name, AlarmTypes: [query.type === 'metric' ? 'MetricAlarm' : 'CompositeAlarm'], HistoryItemType: 'StateUpdate', StartDate: new Date(start), EndDate: new Date(end), MaxRecords: 100, NextToken: query.nextToken, ScanBy: 'TimestampDescending' }));
-    return { items: (page.AlarmHistoryItems ?? []).map((i) => ({ timestamp: iso(i.Timestamp), type: i.HistoryItemType, summary: i.HistorySummary, data: i.HistoryData })), nextToken: page.NextToken, observation: { attemptedAt, succeededAt: new Date().toISOString() } };
-  } catch (error) { return { items: [], observation: { attemptedAt, errorCode: error instanceof Error ? error.name : 'UnknownError', error: error instanceof Error ? error.message : String(error) } }; }
+    return { scope, items: (page.AlarmHistoryItems ?? []).map((i) => ({ timestamp: iso(i.Timestamp), type: i.HistoryItemType, summary: i.HistorySummary, data: i.HistoryData })), nextToken: page.NextToken, observation: { attemptedAt, succeededAt: new Date().toISOString() } };
+  } catch (error) { return { scope, items: [], observation: { attemptedAt, errorCode: error instanceof Error ? error.name : 'UnknownError', error: error instanceof Error ? error.message : String(error) } }; }
 }

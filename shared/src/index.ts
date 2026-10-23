@@ -259,6 +259,10 @@ export const STATUS_LABEL: Record<Status, string> = {
 export interface MonitoringScope { source: string; account: string; region: string }
 export type MonitoringResourceType = 'lambda' | 'sqs-queue' | 'load-balancer' | 'ecs-service' | 'ec2-instance' | 'rds-instance';
 export interface MonitoringResource {
+  metricsSupported?: boolean;
+  alarmMappingSupported?: boolean;
+  alarmScopeWarning?: string;
+  metricsUnsupportedReason?: string;
   key: string;
   nodeId: string;
   type: ResourceType;
@@ -307,6 +311,7 @@ export interface MonitoringAlarmSnapshot {
 }
 export interface AlarmHistoryItem { timestamp?: string; type?: string; summary?: string; data?: string }
 export interface AlarmHistorySnapshot {
+  scope: MonitoringScope;
   items: AlarmHistoryItem[];
   nextToken?: string;
   observation: ObservationState;
@@ -334,3 +339,28 @@ export interface MonitoringMetricsSnapshot {
 }
 
 export interface SavedResourceGroup { id: string; name: string; tagFilters: Array<{ key: string; value?: string }>; resourceKeys: string[] }
+
+export type MonitoringRelatedReason =
+  | { kind: 'edge'; direction: 'outgoing' | 'incoming'; edgeKind: EdgeKind; label?: string; evidence: 'unknown' }
+  | { kind: 'tag'; key: string; value: string };
+export interface MonitoringRelatedCandidate { resource: MonitoringResource; reasons: MonitoringRelatedReason[] }
+export interface MonitoringGraphState {
+  state: 'not-requested' | 'loading' | 'complete' | 'partial' | 'error';
+  stale?: boolean;
+  observation?: ObservationState;
+}
+export interface MonitoringRelatedSnapshot {
+  error?: string;
+  scope: MonitoringScope;
+  resourceKey: string;
+  connected: MonitoringRelatedCandidate[];
+  sameTags: MonitoringRelatedCandidate[];
+  graph: MonitoringGraphState;
+  tagCoverage: { types: MonitoringResourceType[]; incompleteTypes: MonitoringResourceType[] };
+}
+export interface MonitoringResourceResolution {
+  scope: MonitoringScope;
+  resources: MonitoringResource[];
+  unresolvedKeys: string[];
+  graph: MonitoringGraphState;
+}

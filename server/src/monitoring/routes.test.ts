@@ -113,3 +113,35 @@ test('each initial resource type lists only its service and keeps monitoring dim
   }
 });
 test('alarm observation preserves structured authorization error code',async()=>{const s=fixture(async()=>{throw Object.assign(new Error('denied'),{name:'AccessDeniedException'});});const result=await new AlarmRepository().get(s);assert.equal(result.observation.errorCode,'AccessDeniedException');});
+
+test('alarm history returns actual session scope on success and permission failure after same-profile account switch',async()=>{
+ let denied=false;
+ const s=fixture(async()=>{if(denied)throw Object.assign(new Error('denied'),{name:'AccessDeniedException'});return{AlarmHistoryItems:[{HistorySummary:'changed'}]};});
+ const app=Fastify();
+ registerMonitoringRoutes(app,async()=>s,new AlarmRepository());
+ const url='/api/monitoring/alarms/history?name=same-alarm&type=metric&start=2026-10-21&end=2026-10-22';
+ assert.deepEqual((await app.inject(url)).json().scope,{source:s.source,account:s.account,region:s.region});
+ s.account='111111111111';
+ denied=true;
+ const failed=(await app.inject(url)).json();
+ assert.deepEqual(failed.scope,{source:s.source,account:'111111111111',region:s.region});
+ assert.equal(failed.observation.errorCode,'AccessDeniedException');
+ await app.close();
+});
+
+test('resource route reuses five-minute cache and refresh=1 performs exactly one new list call',async()=>{
+ let lists=0;
+ const s=fixture(async(command)=>{assert.equal(command.constructor.name,'ListFunctionsCommand');lists++;return{Functions:[]};});
+ const app=Fastify();
+ registerMonitoringRoutes(app,async()=>s,new AlarmRepository());
+ const url='/api/monitoring/resources?type=lambda';
+ assert.equal((await app.inject(url)).statusCode,200);
+ assert.equal(lists,1);
+ assert.equal((await app.inject(url)).statusCode,200);
+ assert.equal(lists,1);
+ assert.equal((await app.inject(`${url}&refresh=1`)).statusCode,200);
+ assert.equal(lists,2);
+ assert.equal((await app.inject(url)).statusCode,200);
+ assert.equal(lists,2);
+ await app.close();
+});

@@ -4,9 +4,10 @@ import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand, DescribeTag
 import { ECSClient, ListClustersCommand, ListServicesCommand, DescribeServicesCommand } from '@aws-sdk/client-ecs';
 import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { RDSClient, DescribeDBInstancesCommand, ListTagsForResourceCommand } from '@aws-sdk/client-rds';
-import type { MonitoringResource, MonitoringResourceIndex, MonitoringResourceType } from '@orrery/shared';
+import type { MonitoringResource, MonitoringResourceIndex, MonitoringResourceType, ResourceGraph } from '@orrery/shared';
 import type { MonitoringSession } from './alarms.ts';
 import { nid, tagsToRecord } from '../collectors/ids.ts';
+import { queriesForNode } from '../metrics/cloudwatch.ts';
 import { scopeKey } from '../aws/sessions.ts';
 
 export const MONITORING_TYPES: MonitoringResourceType[] = ['lambda', 'sqs-queue', 'load-balancer', 'ecs-service', 'ec2-instance', 'rds-instance'];
@@ -110,7 +111,17 @@ export async function listMonitoringResources(s: MonitoringSession, type: Monito
   return { scope: { source: s.source, account: s.account, region: s.region }, resources, types: [type], complete: !errors.length, observation: { attemptedAt, succeededAt: errors.length ? undefined : new Date().toISOString(), error: errors.length ? errors.join('; ') : undefined } };
 }
 
+export function graphResources(graph: ResourceGraph): MonitoringResource[] {
+  return graph.nodes.filter((node) => node.type !== 'region').map((node) => {
+    const queries = queriesForNode(node);
+    const metricsSupported = queries.length > 0;
+    const otherRegion = queries.find((q) => q.region && q.region !== graph.region)?.region;
+    return { key: resourceKey(graph.account, graph.region, node.type, node.nativeId), nodeId: node.id, type: node.type, nativeId: node.nativeId, name: node.name, region: node.region, arn: node.arn, tags: node.tags, tagsStatus: node.tags ? 'complete' as const : 'unavailable' as const, props: node.props, metricsSupported, alarmMappingSupported: metricsSupported, alarmScopeWarning: otherRegion ? `지표는 ${otherRegion}에서 조회합니다. 경보 목록은 선택 리전 ${graph.region} 범위이므로 해당 지표 리전의 경보를 포함하지 않을 수 있습니다.` : metricsSupported ? undefined : '이 유형의 경보·자원 연결을 해석하지 못합니다.', metricsUnsupportedReason: metricsSupported ? undefined : '이 유형의 CloudWatch 지표 프리셋은 아직 지원하지 않습니다.' };
+  });
+}
+
 export class ResourceRepository {
+  private graphs = new Map<string, MonitoringResource[]>();
   private values = new Map<string, MonitoringResourceIndex>();
   private pending = new Map<string, Promise<MonitoringResourceIndex>>();
   get(s: MonitoringSession, type: MonitoringResourceType, refresh = false): Promise<MonitoringResourceIndex> {
@@ -123,7 +134,18 @@ export class ResourceRepository {
     this.pending.set(key, task);
     return task;
   }
+  includeGraph(s: MonitoringSession, graph: ResourceGraph): void {
+    if (s.source !== graph.source || s.account !== graph.account || s.region !== graph.region) throw Object.assign(new Error('자원 그래프의 계정 범위가 일치하지 않습니다.'), { statusCode: 409 });
+    this.graphs.set(scopeKey('resources:graph', s.source, s.account, s.region), graphResources(graph));
+  }
+  coverage(s: MonitoringSession) {
+    const types = MONITORING_TYPES.filter((t) => this.values.has(scopeKey(`resources:${t}`, s.source, s.account, s.region)));
+    const incompleteTypes = MONITORING_TYPES.filter((t) => { const value = this.values.get(scopeKey(`resources:${t}`, s.source, s.account, s.region)); return !value?.complete || value.resources.some((r) => r.tagsStatus !== 'complete'); });
+    return { types, incompleteTypes };
+  }
   known(s: MonitoringSession): MonitoringResource[] {
-    return MONITORING_TYPES.flatMap((t) => this.values.get(scopeKey(`resources:${t}`, s.source, s.account, s.region))?.resources ?? []);
+    const map = new Map((this.graphs.get(scopeKey('resources:graph', s.source, s.account, s.region)) ?? []).map((r) => [r.key, r]));
+    for (const t of MONITORING_TYPES) for (const resource of this.values.get(scopeKey(`resources:${t}`, s.source, s.account, s.region))?.resources ?? []) map.set(resource.key, { ...resource, metricsSupported: true });
+    return [...map.values()];
   }
 }

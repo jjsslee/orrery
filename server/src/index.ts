@@ -108,7 +108,7 @@ async function session(query: Record<string, unknown>): Promise<Session> {
 }
 
 const alarmRepository = new AlarmRepository();
-registerMonitoringRoutes(app, session, alarmRepository);
+registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v2', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
 
 async function alarmOutput(s: Session) {
   const started = Date.now();
