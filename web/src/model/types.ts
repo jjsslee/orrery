@@ -1,7 +1,7 @@
 import type { Category, ResourceType, Status } from '@orrery/shared';
 import {
   Archive, ArrowLeftRight, Boxes, Braces, CalendarClock, Container, Database, DatabaseZap, FileKey, FolderTree, Globe, Grid2x2,
-  Hammer, Hexagon, Inbox, KeyRound, Layers, ListTree, Lock, Map as MapIcon, Megaphone, MemoryStick, Network, Orbit, Package, Plug,
+  Hammer, HardDrive, Hexagon, Inbox, KeyRound, Layers, ListTree, Lock, Map as MapIcon, Megaphone, MemoryStick, Network, Orbit, Package, Plug,
   Rss, Server, Shield, Signpost, Table2, Target, Users, Waypoints, Zap, type LucideIcon,
 } from 'lucide-react';
 
@@ -44,6 +44,7 @@ export const TYPE_META: Record<ResourceType, TypeMeta> = {
   elasticache: { label: 'ElastiCache', short: 'ElastiCache', category: 'database', icon: MemoryStick, keyProp: '엔진' },
   's3-bucket': { label: 'S3 버킷', short: 'S3', category: 'storage', icon: Archive, keyProp: '생성일' },
   efs: { label: 'EFS 파일 시스템', short: 'EFS', category: 'storage', icon: FolderTree, keyProp: '크기' },
+  'ebs-volume': { label: 'EBS 볼륨', short: 'EBS', category: 'storage', icon: HardDrive, keyProp: '크기' },
   'ecr-repository': { label: 'ECR 리포지터리', short: 'ECR', category: 'storage', icon: Package, keyProp: '생성일' },
   'security-group': { label: '보안 그룹', short: 'SG', category: 'security', icon: Shield, overlay: 'security', keyProp: '인바운드 규칙 수' },
   'iam-role': { label: 'IAM 역할', short: 'IAM', category: 'security', icon: KeyRound, overlay: 'iam', keyProp: '마지막 사용' },

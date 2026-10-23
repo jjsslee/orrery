@@ -8,6 +8,7 @@ import { refsFromDefinition, targetNodeId } from './messaging.ts';
 import { portLabel, trustSummary } from './security.ts';
 import { regionFromLocation } from './s3.ts';
 import { serviceStatus } from './ecs.ts';
+import { splitVolumes, volumeLabel, volumeNode } from './ec2.ts';
 
 test('ARN helpers', () => {
   assert.equal(lambdaNameFromArn('arn:aws:lambda:ap-northeast-2:000000000000:function:orders:live'), 'orders');
@@ -98,4 +99,28 @@ test('misc', () => {
   assert.equal(serviceStatus(2, 2, 2, 'ACTIVE'), 'warning');
   assert.equal(serviceStatus(2, 0, 1, 'ACTIVE'), 'critical');
   assert.equal(serviceStatus(0, 0, 1, 'ACTIVE'), 'healthy');
+});
+
+test('EBS volumes: attached ones summarise on the instance, detached ones become nodes', () => {
+  const { byInstance, detached } = splitVolumes([
+    { VolumeId: 'vol-root', Size: 30, VolumeType: 'gp3', Encrypted: true, Attachments: [{ InstanceId: 'i-web', State: 'attached' }] },
+    { VolumeId: 'vol-data', Size: 70, VolumeType: 'io2', Encrypted: false, Attachments: [{ InstanceId: 'i-web', State: 'attached' }] },
+    { VolumeId: 'vol-leaving', Size: 8, VolumeType: 'gp3', Attachments: [{ InstanceId: 'i-web', State: 'detaching' }] },
+    { VolumeId: 'vol-idle', Size: 100, VolumeType: 'gp2', State: 'available', Attachments: [] },
+    { VolumeId: 'vol-new', Size: 10, State: 'creating' },
+  ]);
+  assert.deepEqual(detached.map((v) => v.VolumeId), ['vol-idle', 'vol-new']);
+  const web = byInstance.get('i-web')!;
+  assert.equal(volumeLabel(web), '2개, 100 GiB (gp3, io2, 암호화 1/2)');
+  assert.equal(volumeLabel({ count: 1, gib: 8, types: new Set(['gp3']), encrypted: 1 }), '1개, 8 GiB (gp3, 암호화)');
+  assert.equal(volumeLabel({ count: 1, gib: 8, types: new Set(), encrypted: 0 }), '1개, 8 GiB (미암호화)');
+
+  const idle = volumeNode('vol-idle', { ...detached[0], KmsKeyId: 'arn:aws:kms:ap-northeast-2:000000000000:key/test' }, 'ap-northeast-2', '000000000000');
+  assert.equal(idle.id, 'ebs-volume:vol-idle');
+  assert.equal(idle.parentId, undefined);
+  assert.equal(idle.status, 'inactive');
+  assert.equal(idle.statusLabel, '미연결');
+  assert.equal(idle.props['크기'], '100 GiB');
+  assert.deepEqual(idle.refs, ['arn:aws:kms:ap-northeast-2:000000000000:key/test']);
+  assert.equal(volumeNode('vol-new', detached[1], 'ap-northeast-2', '000000000000').status, 'warning');
 });

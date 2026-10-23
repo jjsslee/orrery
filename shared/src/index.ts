@@ -51,6 +51,7 @@ export type ResourceType =
   // storage
   | 's3-bucket'
   | 'efs'
+  | 'ebs-volume'
   | 'ecr-repository'
   // security
   | 'security-group'
