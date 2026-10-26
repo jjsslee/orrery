@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Copy, Check, Table as TableIcon, LineChart, LocateFixed, X } from 'lucide-react';
 import type { EdgeKind, ResourceNode, ResourceEdge } from '@orrery/shared';
 import { STATUS_LABEL } from '@orrery/shared';
-import { ENTRY_TYPES } from '../model/request-journey';
 import { useStore } from '../model/store';
 import { EDGE_KIND_LABEL, TYPE_META } from '../model/types';
 import { TypeIcon } from '../components/TypeIcon';
@@ -60,8 +59,6 @@ export function Inspector() {
       </header>
 
       <div className="insp-body">
-        {ENTRY_TYPES.has(node.type) && <button type="button" className="journey-button" onClick={() => useStore.getState().setView('journey')}>End user 요청 흐름 보기</button>}
-
         <div className="insp-status">
           <StatusDot status={node.status} showLabel label={node.statusLabel ? `${STATUS_LABEL[node.status]} · ${node.statusLabel}` : undefined} size={9} />
           {traffic != null && <span className="insp-traffic" title="같은 유형 자원 대비 상대 처리량"><span className="insp-traffic-bar"><span style={{ width: `${traffic * 100}%` }} /></span>트래픽 {(traffic * 100).toFixed(0)}%</span>}

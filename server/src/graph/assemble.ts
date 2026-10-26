@@ -8,7 +8,6 @@
  */
 import type { AlarmInfo, CollectorReport, EdgeKind, ResourceEdge, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
 import type { CollectorOutput } from '../collectors/types.ts';
-import { buildFrontendRelations } from './frontend-relations.ts';
 import { edge, nid } from '../collectors/ids.ts';
 
 const STATUS_RANK = { unknown: 0, inactive: 1, healthy: 2, warning: 3, critical: 4 } as const;
@@ -57,21 +56,11 @@ export function assembleGraph(
   const all = [...nodes.values()];
   for (const n of all) delete n.refs; // internal only
 
-  const collectedAt = new Date().toISOString();
-  const discovery = outputs.flatMap((out) => out.frontendDiscovery ? [out.frontendDiscovery] : []);
-  if (!discovery.length && reports.some((report) => report.collector === 'edge' && !report.ok)) {
-    discovery.push({ hosting: [], cors: [], coverage: [
-      { service: 'cloudfront', state: 'unavailable' },
-      { service: 'rest-api', state: 'unavailable' },
-      { service: 'http-api', state: 'unavailable' },
-    ] });
-  }
   return {
-    frontendRelations: buildFrontendRelations(discovery, meta, collectedAt, new Set(nodes.keys())),
     account: meta.account,
     region: meta.region,
     source: meta.source,
-    collectedAt,
+    collectedAt: new Date().toISOString(),
     nodes: all,
     edges: [...edges.values()],
     reports: [...reports, { collector: 'assemble', ok: true, durationMs: 0, nodes: all.length, edges: edges.size, error: dropped ? `연결 대상이 수집되지 않아 제외된 관계 ${dropped}개` : undefined }],

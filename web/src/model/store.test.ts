@@ -6,10 +6,7 @@ import { useStore } from './store';
 import type { CollectEvent, MetricsBundle, ResourceGraph } from '@orrery/shared';
 
 function deferred<T>() { let resolve!: (v: T) => void; let reject!: (e: Error) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
-const graph = (account: string): ResourceGraph => ({ account, source: 'test', region: 'r', collectedAt: '', nodes: [], edges: [], reports: [], frontendRelations: {
-  schemaVersion: 1, scope: { account, source: 'test', region: 'r' }, collectedAt: '', hosting: [], cors: [], coverage: [], unresolved: [],
-  relations: [{ id: `${account}:relation`, origin: 'https://app.example.com', hostingResourceId: 'cloudfront:same-name', targetId: 'api-gateway:same-name', evidenceIndexes: [], kind: 'allowed_origin' }],
-} });
+const graph = (account: string): ResourceGraph => ({ account, source: 'test', region: 'r', collectedAt: '', nodes: [], edges: [], reports: [] });
 const metrics = (label: string): MetricsBundle => ({ region: label, collectedAt: '', series: {}, traffic: {} });
 function reset() { useStore.setState({ profile: 'A', region: 'r', graph: graph('new'), metrics: undefined, metricsLoading: false, liveBusy: false, loading: { active: false, reports: {}, order: [] } }); }
 
@@ -51,8 +48,6 @@ test('A → B → A: late regions, identity, metrics, events and failures stay i
     assert.deepEqual(useStore.getState().regions, ['new-region']);
     assert.equal(useStore.getState().metrics, undefined);
     assert.equal(useStore.getState().graph?.account, 'new-account');
-    assert.equal(useStore.getState().graph?.frontendRelations?.scope.account, 'new-account');
-    assert.deepEqual(useStore.getState().graph?.frontendRelations?.relations.map((v) => v.id), ['new-account:relation']);
     assert.equal(useStore.getState().loading.error, undefined);
   } finally { Object.assign(api, original); }
 });
@@ -98,7 +93,7 @@ test('automatic session account change rejects status and metrics from a differe
   try { await useStore.getState().refreshStatus(); assert.match(useStore.getState().statusError ?? '', /계정|다시 연결/); await useStore.getState().loadMetrics(); assert.equal(useStore.getState().metrics, undefined); assert.match(useStore.getState().metricsError ?? '', /계정|다시 연결/); } finally { Object.assign(api, original); }
 });
 
-test('late successful graph after profile switch cannot restore the previous frontend relations', async () => {
+test('late successful graph after profile switch cannot restore the previous account graph', async () => {
   reset(); useStore.setState({ view: 'topology' });
   const original = { ...api };
   const first = deferred<ResourceGraph>();
@@ -110,7 +105,6 @@ test('late successful graph after profile switch cannot restore the previous fro
     await useStore.getState().setProfile('B');
     first.resolve(graph('account-A'));
     await pending;
-    assert.equal(useStore.getState().graph?.frontendRelations?.scope.account, 'account-B');
-    assert.deepEqual(useStore.getState().graph?.frontendRelations?.relations.map((v) => v.id), ['account-B:relation']);
+    assert.equal(useStore.getState().graph?.account, 'account-B');
   } finally { Object.assign(api, original); }
 });

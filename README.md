@@ -27,7 +27,7 @@ npm run dev
 | `ORRERY_DEFAULT_PROFILE` | – | 처음 열 때 선택할 프로필 (없으면 `AWS_PROFILE`, 그다음 `default`) |
 | `AWS_PROFILE` | – | `?profile=` 생략 시 사용할 프로필 |
 
-수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 인증 소스·실제 계정·리전별로 분리하며 파일 이름에는 키의 SHA-256 해시를 사용합니다. 상단바의 **다시 수집**은 구성 캐시를 무시합니다. 상태·경보 갱신은 구성 캐시의 10분 만료 시간을 연장하지 않습니다. 세션 안에서는 STS 계정 확인과 실제 SDK 호출에 같은 자격증명 스냅샷을 사용합니다. 최대 5분 또는 임시 자격증명 만료 1분 전 중 먼저 도달한 시점에 STS로 다시 확인합니다. 키/SSO 설정을 갱신했거나 같은 프로필의 계정이 달라졌으면 **다시 연결**로 세션·계정을 즉시 다시 확인할 수 있습니다. 연결 실패 중에는 이전 계정의 화면 데이터를 비웁니다.
+수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 인증 소스·실제 계정·리전별로 분리하며 파일 이름에는 키의 SHA-256 해시를 사용합니다. 현재 그래프 캐시 형식은 `graph-v5`이며 이전 형식은 재사용하지 않고 다시 수집합니다. 상단바의 **다시 수집**은 구성 캐시를 무시합니다. 상태·경보 갱신은 구성 캐시의 10분 만료 시간을 연장하지 않습니다. 세션 안에서는 STS 계정 확인과 실제 SDK 호출에 같은 자격증명 스냅샷을 사용합니다. 최대 5분 또는 임시 자격증명 만료 1분 전 중 먼저 도달한 시점에 STS로 다시 확인합니다. 키/SSO 설정을 갱신했거나 같은 프로필의 계정이 달라졌으면 **다시 연결**로 세션·계정을 즉시 다시 확인할 수 있습니다. 연결 실패 중에는 이전 계정의 화면 데이터를 비웁니다.
 
 ## 데스크톱 앱 (Windows·macOS)
 
@@ -137,27 +137,6 @@ scripts/  package.mjs: Windows·macOS 데스크톱 앱 빌드
 
 `GetMetricData`는 읽기 전용이어도 비용이 발생할 수 있습니다. 선택·기간 변경 전 비용 안내와 대상을 확인하세요. 서버는 한 요청에서 최대 100개 지표 쿼리·10개 SDK command를 허용하며 기본 SDK 재시도(maxAttempts 8)를 포함하면 HTTP 시도는 최대 80회입니다. 이 요청 상한은 비용 상한을 보장하지 않습니다. 경보 조회에는 `cloudwatch:DescribeAlarms`·`cloudwatch:DescribeAlarmHistory`, 지표에는 `cloudwatch:GetMetricData`, 자원 목록·태그·연결에는 해당 서비스의 읽기 권한이 필요합니다. 구현·검증 기록은 [자원 중심 모니터링 계획](docs/monitoring-resource-workspace-plan.md)을 참고하세요.
 
-## 사용자 요청 흐름 (A안)
-
-상단 **요청 흐름** 탭 또는 자원 상세의 **End user 요청 흐름 보기**에서 시작 자원·URL을 선택하고 End user를 클릭합니다. 요청 점과 응답 점이 선을 따라 이동하며 재생/일시정지·다음 구간·속도·위치 조절을 지원합니다. 실제 API 호출이나 트래픽 측정은 하지 않습니다.
-
-- CloudFront behavior/origin → S3, API Gateway route → Lambda의 설정상 경로와 가정한 동기 응답을 재생합니다. 캐시 적중 시 오리진 요청을 생략합니다. FE 응답 후에는 사용자가 고른 API 후보·라우트의 별도 브라우저 왕복을 재생합니다.
-- AppSync·DB·큐 등 연결된 자원도 표시합니다. AppSync resolver, Lambda 내부 코드, 로드 밸런서 listener, 비동기 통합, Edge 함수 등 미해석 구간에서는 멈춥니다. 회색 점선은 관련 자원이며 해당 요청의 실행을 뜻하지 않습니다. 주변 자원은 최대 60개 범위로 표시합니다.
-- 현재 계정·리전·인증 소스의 수집 결과만 사용하며 특정 계정 이름·도메인을 하드코딩하지 않습니다. 프로필/스냅샷 전환은 재생과 시나리오를 초기화합니다. URL query·fragment는 분석에 보존하지 않습니다.
-- 수집 시 API Gateway V2 `GetRoutes`를 API별 페이지 단위로 추가 조회합니다(`apigateway:GET` 권한). 기존 수집의 API 한도와 재시도를 사용하며, 재생 자체는 네트워크 요청을 만들지 않습니다. 이 화면에서는 지도 라이브 polling을 중단합니다.
-
-### FE–API 연결 근거
-
-구성 수집 결과의 `frontendRelations`에 HTTP API의 CORS 설정과 REST integration response의 정적 CORS 헤더를 보존합니다. CloudFront 배포 도메인·대체 도메인과 exact origin의 host를 매칭해 **호출 허용 후보**를 만들며, 실제 호출·배포 도달·CORS 성공을 보장하지 않습니다. 같은 태그나 자원 이름만으로 관계를 만들지 않습니다. CORS는 내부 후보 탐색에 사용하며 화면에서는 접힌 분석 근거에서만 설명합니다.
-
-- CORS 근거에는 기존 AWS 호출의 응답만 활용합니다. Function URL·배포 파일·로그·실제 API 요청은 추가 조회하지 않습니다.
-- origin의 scheme·host·port를 유지하고 REST의 path·method·응답 status·preflight/실제 응답 범위를 구분합니다. REST 근거는 편집 설정(`editable-config`), HTTP 정책은 배포 여부 미확인(`unverified`)으로 표시합니다.
-- wildcard/null/localhost/잘못된 origin, proxy backend·동적 template, 조회 실패·상한은 사유로 남깁니다. 미매칭 origin도 현재 수집 범위에서 확인되지 않았다는 뜻이며 관계 없음이 아닙니다. 비활성 CloudFront는 연결하지 않습니다.
-- 관계 ID와 snapshot에는 인증 소스·실제 계정·리전을 포함합니다. 프로필 전환 시 기존 graph 교체·요청 generation 보호를 그대로 사용합니다. 원문 헤더·환경 변수·로그를 추가 저장하지 않습니다.
-- 그래프 캐시 namespace를 `graph-v4`로 분리하여 최초 구성 조회에서 새 형식으로 재수집합니다. 기존 사용자 설정·모니터링 구성은 유지됩니다. 구버전 graph에 `frontendRelations`가 없으면 **근거 미수집**이며 빈 관계 집합으로 해석하면 안 됩니다.
-
-구현 범위와 다음 단계는 [구현 계획](docs/url-path-implementation-plan.md)을 참고하세요.
-
 ## 라이브 모드
 
 상단바의 **라이브**를 켜면 탭이 보이는 동안 무료 호출만으로 화면을 갱신합니다.
@@ -185,7 +164,7 @@ npm run typecheck   # shared / server / web
 npm test            # server + web: 읽기 전용 가드, 로컬 요청, 경보/지표 오류, 캐시, 요청 경합, 차트 회귀
 ```
 
-2026-10-26 요청 흐름 A안 검증: 서버 88개 + 웹 66개(총 154개), 전체 typecheck, build, `git diff --check` 통과. fixture 브라우저로 왕복 재생·AppSync 미확인 중단·계정 범위 변경 초기화·cache hit·숨김 중단·reduced-motion과 데스크톱/모바일 화면을 확인했습니다. 실계정·실제 서비스 호출은 미검증입니다. v0.5.0 릴리즈에서 macOS ARM/Intel·Windows x64 패키지를 생성하고 ZIP·Mac 서명·패키지 버전·내장 UI를 확인했습니다. ARM 패키지의 내장 서버는 Electron utility process에서 health와 웹 자산을 확인했으며 Windows/Intel Mac 실제 실행은 미검증입니다. [릴리즈 기록](docs/releases/v0.5.0.md)을 참고하세요.
+2026-10-26 v0.5.1 검증: 서버 74개 + 웹 58개(총 132개), 전체 typecheck/build와 diff 검사를 통과했습니다. macOS ARM/Intel·Windows x64 ZIP 무결성, Mac ad-hoc 서명, Windows PE 형식과 패키지 버전을 확인했습니다. ARM 내장 서버는 Electron utility process에서 health(`0.5.1+20261026T072120Z`)·내장 웹을 확인했습니다. Windows/Intel Mac 실제 실행과 Apple 공증은 미검증입니다.
 
 2026-10-26 v0.4.0 검증: `npm test` 서버 73개 + 웹 56개(총 129개), shared/server/web 전체 typecheck, build, `git diff --check`를 통과했습니다. 함께 보는 자원 8개 상한·어디서나 빼기 테스트는 이전 코드에서 실패하는 것을 먼저 확인했습니다. 실계정에서 Lambda 8개를 담아 지표 쿼리 32개를 SDK 1회로 조회했고, 1440/1280/1024/820/390px와 다크/라이트에서 상단바 잘림·가로 넘침이 없음을 확인했습니다. macOS/Windows 실행파일 생성, zip 정합성, Windows PE 형식, macOS 서명(arm64·x86_64) 검사와 macOS ARM 실행파일의 health(`0.4.0+20261026T013509Z`)·내장 웹 자산을 확인했습니다. Windows/Intel Mac 실제 실행과 Apple 공증은 미검증입니다.
 

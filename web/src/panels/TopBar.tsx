@@ -35,7 +35,6 @@ export function TopBar() {
         <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>토폴로지</button>
         <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>유형별</button>
         <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>모니터링</button>
-        <button type="button" role="tab" aria-selected={view === 'journey'} className={`seg ${view === 'journey' ? 'on' : ''}`} onClick={() => setView('journey')}>요청 흐름</button>
       </div>
 
       <div className="topbar-spacer" />
@@ -65,7 +64,7 @@ export function TopBar() {
             <button type="button" className="link-btn" onClick={() => void reconnect()} disabled={!profile || loading.active} title="AWS 자격증명과 계정을 다시 확인하고 캐시를 분리합니다">다시 연결</button>
           </div>
         </div>
-        {view !== 'monitoring' && view !== 'journey' && <>
+        {view !== 'monitoring' && <>
         <span className="topbar-sep" aria-hidden />
         <button
           type="button"

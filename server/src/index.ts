@@ -107,7 +107,7 @@ async function session(query: Record<string, unknown>): Promise<Session> {
 }
 
 const alarmRepository = new AlarmRepository();
-registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v4', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
+registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v5', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
 
 async function alarmOutput(s: Session) {
   const started = Date.now();
@@ -115,7 +115,7 @@ async function alarmOutput(s: Session) {
   return { observation: snapshot.observation, output: { nodes: [], edges: [], alarms: graphAlarmInfos(snapshot.alarms) }, report: { collector: 'alarms', ok: snapshot.complete, durationMs: Date.now() - started, nodes: 0, edges: 0, error: snapshot.observation.error } };
 }
 
-const graphKey = (s: Session) => scopeKey('graph-v4', s.source, s.account, s.region);
+const graphKey = (s: Session) => scopeKey('graph-v5', s.source, s.account, s.region);
 
 async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Promise<ResourceGraph> {
   const previous = await cache.get<ResourceGraph>(graphKey(s), Infinity);

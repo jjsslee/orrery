@@ -101,7 +101,6 @@ async function run(ctx: CollectorContext) {
       nodes.push({
         id: nid('appsync-api', apiId),
         type: 'appsync-api',
-        requestRouting: { kind: 'appsync', protocol: 'events', dataSources: dataSources.map((ds) => ({ name: ds.name ?? '', type: ds.type ?? 'UNKNOWN', refs: dataSourceRefs(ds) })) },
         category: 'network',
         name: api.name ?? apiId,
         nativeId: apiId,
@@ -147,7 +146,6 @@ async function run(ctx: CollectorContext) {
       nodes.push({
         id: nid('appsync-api', apiId),
         type: 'appsync-api',
-        requestRouting: { kind: 'appsync', protocol: 'graphql', dataSources: dataSources.map((ds) => ({ name: ds.name ?? '', type: ds.type ?? 'UNKNOWN', refs: dataSourceRefs(ds) })) },
         category: 'network',
         name: api.name ?? apiId,
         nativeId: apiId,

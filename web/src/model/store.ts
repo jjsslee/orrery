@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { sameTagFilter, type TagFilter } from './tags';
 import { TYPE_META } from './types';
 
-export type ViewMode = 'topology' | 'types' | 'monitoring' | 'journey';
+export type ViewMode = 'topology' | 'types' | 'monitoring';
 
 export interface Overlays {
   security: boolean;
