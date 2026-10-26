@@ -280,8 +280,6 @@
 .empty-sub { font-size: 12.5px; line-height: 1.5; }
 .empty-action { display: flex; justify-content: center; margin-top: 14px; text-align: left; }
 
-.closed { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--canvas); }
-.closed .load-head { margin-bottom: 0; }
 
 /* ---------- first-run setup guide ---------- */
 .setup { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px 16px; overflow: auto; }

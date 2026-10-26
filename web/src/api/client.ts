@@ -14,9 +14,7 @@ async function json<T>(url: string, signal?: AbortSignal, body?: unknown): Promi
 }
 
 export const api = {
-  profiles: () => json<{ profiles: ProfileInfo[]; defaultProfile: string; env: boolean; packaged: boolean }>('/api/profiles'),
-  /** Packaged builds only: stops the local server. */
-  quit: async () => { if (!(await fetch('/api/quit', { method: 'POST' })).ok) throw new Error('종료하지 못했습니다'); },
+  profiles: () => json<{ profiles: ProfileInfo[]; defaultProfile: string; env: boolean }>('/api/profiles'),
   regions: (profile: string, signal?: AbortSignal) => json<{ regions: string[] }>(`/api/regions?${q({ profile })}`, signal),
   identity: (profile: string, region: string, signal?: AbortSignal, reconnect = false) => json<{ account: string; arn: string; region: string; source: string }>(`/api/identity?${q({ profile, region, reconnect: reconnect ? '1' : undefined })}`, signal),
   graph: (profile: string, region: string, refresh?: boolean) => json<ResourceGraph>(`/api/graph?${q({ profile, region, refresh: refresh ? '1' : undefined })}`),

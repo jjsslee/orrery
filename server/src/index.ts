@@ -18,7 +18,7 @@ import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
 import { rejectNonLocal } from './http/local-only.ts';
-import { BUILD, detachServer, embeddedWeb, macApp, openBrowser, orreryAt, packaged, portFree, replaceOrrery, userDataDir } from './runtime.ts';
+import { BUILD, orreryAt, packaged, portFree, replaceOrrery, showWindow, userDataDir, webFiles } from './runtime.ts';
 import { readFileSync } from 'node:fs';
 
 /** Minimal .env loader (KEY=VALUE lines, # comments); never overrides variables already set. */
@@ -60,11 +60,10 @@ const PORT = Number(process.env.ORRERY_PORT ?? 4820);
 const GRAPH_TTL = Number(process.env.ORRERY_GRAPH_TTL_MS ?? 10 * 60_000);
 const METRICS_TTL = Number(process.env.ORRERY_METRICS_TTL_MS ?? 60_000);
 
-// Packaged, the log goes to the console window a person is looking at: warnings only.
-// Orrery.app has no console window, so it writes them to orrery.log in the data folder.
-if (macApp) mkdirSync(userDataDir(), { recursive: true });
+// The desktop app has no console to read: warnings and errors go to orrery.log in the data folder.
+if (packaged) mkdirSync(userDataDir(), { recursive: true });
 const app = Fastify({
-  logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info'), ...(macApp ? { file: join(userDataDir(), 'orrery.log') } : {}) },
+  logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info'), ...(packaged ? { file: join(userDataDir(), 'orrery.log') } : {}) },
 });
 app.addHook('onRequest', async (req, reply) => {
   const reason = rejectNonLocal(req.url, req.headers);
@@ -140,7 +139,7 @@ async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Pr
 
 app.get('/api/health', async () => ({ ok: true, readOnly: true, build: BUILD }));
 
-// Packaged only: Orrery.app has no window to close, so the web app offers a quit button.
+// Packaged only: a newer build quits the one still running on its port to take over (replaceOrrery).
 if (packaged) {
   app.post('/api/quit', async () => {
     setTimeout(shutdown, 100);
@@ -152,7 +151,7 @@ app.get('/api/profiles', async () => {
   const profiles = await listProfiles();
   const wanted = process.env.ORRERY_DEFAULT_PROFILE ?? process.env.AWS_PROFILE;
   const defaultProfile = profiles.find((p) => p.name === wanted)?.name ?? profiles.find((p) => p.isDefault)?.name ?? profiles[0]?.name ?? 'default';
-  return { profiles, defaultProfile, env: Boolean(process.env.AWS_ACCESS_KEY_ID), packaged };
+  return { profiles, defaultProfile, env: Boolean(process.env.AWS_ACCESS_KEY_ID) };
 });
 
 app.get('/api/collectors', async () => collectorLabels());
@@ -256,10 +255,10 @@ app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
   reply.status(err.statusCode ?? 500).send({ error: err.message || '알 수 없는 오류' });
 });
 
-// Production: serve the built web app, embedded in the packaged executable or from web/dist after `npm run build`
+// Production: serve the built web app, shipped next to the packaged server or from web/dist after `npm run build`
 const dist = join(here, '..', '..', 'web', 'dist');
 if (packaged) {
-  const files = embeddedWeb();
+  const files = webFiles(join(here, 'web'));
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not found' });
     const file = files.get(req.url.split('?')[0]) ?? files.get('/index.html');
@@ -274,36 +273,20 @@ if (packaged) {
   });
 }
 
-function announce(url: string, message: string): void {
-  console.log(`${message}: ${url}`);
-  if (process.env.ORRERY_NO_OPEN !== '1') openBrowser(url);
-}
-
 /**
- * The packaged app keeps its usual port when it can (the browser remembers
- * profile and region per origin): it reuses the same build already running
- * there, replaces a different packaged build (an update), and otherwise takes
- * any free port.
+ * The packaged app keeps its usual port when it can (the window remembers
+ * profile and region per origin): it replaces a different packaged build still
+ * running there (an update), and otherwise takes any free port. A second copy
+ * of the same build never gets here: the desktop app runs only once.
  */
 async function start(): Promise<void> {
-  if (macApp && !process.env.ORRERY_DETACHED) {
-    detachServer();
-    process.exit(0);
-  }
   let port = PORT;
   if (packaged && !(await portFree(PORT))) {
     const running = await orreryAt(PORT);
-    if (running === BUILD) {
-      announce(`http://127.0.0.1:${PORT}`, '이미 실행 중인 Orrery를 엽니다');
-      process.exit(0);
-    }
     if (!running || !(await replaceOrrery(PORT))) port = 0;
   }
   await app.listen({ port, host: '127.0.0.1' });
-  if (packaged) {
-    announce(`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`, 'Orrery가 실행 중입니다');
-    console.log('이 창을 닫거나 Ctrl+C를 누르면 종료됩니다.');
-  }
+  if (packaged) showWindow(`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`);
 }
 
 start().catch((err: unknown) => {

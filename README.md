@@ -26,43 +26,44 @@ npm run dev
 | `ORRERY_METRICS_TTL_MS` | `60000` | 지표 캐시 수명 |
 | `ORRERY_DEFAULT_PROFILE` | – | 처음 열 때 선택할 프로필 (없으면 `AWS_PROFILE`, 그다음 `default`) |
 | `AWS_PROFILE` | – | `?profile=` 생략 시 사용할 프로필 |
-| `ORRERY_NO_OPEN` | – | `1`이면 실행파일이 브라우저를 열지 않음 |
 
 수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 인증 소스·실제 계정·리전별로 분리하며 파일 이름에는 키의 SHA-256 해시를 사용합니다. 상단바의 **다시 수집**은 구성 캐시를 무시합니다. 상태·경보 갱신은 구성 캐시의 10분 만료 시간을 연장하지 않습니다. 세션 안에서는 STS 계정 확인과 실제 SDK 호출에 같은 자격증명 스냅샷을 사용합니다. 최대 5분 또는 임시 자격증명 만료 1분 전 중 먼저 도달한 시점에 STS로 다시 확인합니다. 키/SSO 설정을 갱신했거나 같은 프로필의 계정이 달라졌으면 **다시 연결**로 세션·계정을 즉시 다시 확인할 수 있습니다. 연결 실패 중에는 이전 계정의 화면 데이터를 비웁니다.
 
-## 실행파일 (Windows·macOS)
+## 데스크톱 앱 (Windows·macOS)
 
-Node 없이 실행하는 단일 실행파일을 만듭니다. 각 PC에서 실행하면 그 사람의 `~/.aws`(Windows는 `%USERPROFILE%\.aws`) 프로필을 읽고, 자격증명은 그 PC 밖으로 나가지 않습니다.
+Node 없이 실행하는 Electron 앱을 만듭니다. 더블클릭하면 브라우저 없이 Orrery 창이 뜨고, 그 PC의 `~/.aws`(Windows는 `%USERPROFILE%\.aws`) 프로필을 읽습니다. 자격증명은 그 PC 밖으로 나가지 않습니다.
 
 ```bash
 npm run package                     # 전체 대상
 npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 | windows-x64)
 ```
 
-- macOS에서 실행합니다(macOS 실행파일은 `codesign`으로 ad-hoc 서명해야 Apple Silicon에서 실행됨).
-- `release/`에는 네 개만 남습니다. 크기는 대부분 Node 런타임입니다.
+- macOS에서 실행합니다(macOS 앱은 `codesign`으로 ad-hoc 서명해야 Apple Silicon에서 실행됨).
+- `release/`에는 네 개만 남습니다. 크기는 대부분 Electron(Chromium)입니다.
 
   | 파일 | 용도 |
   |---|---|
-  | `Orrery.app` | 이 Mac에서 바로 실행·테스트 (Apple Silicon·Intel 공용) |
-  | `Orrery-macos.zip` | Mac 사용자에게 보내는 파일 |
-  | `orrery-windows-x64.exe` | Windows용 실행파일 (그대로 보내도 됨) |
-  | `orrery-windows-x64.zip` | 위 exe를 압축한 것. 더 작고 `.exe` 첨부를 막는 메일도 통과 |
+  | `Orrery.app` | 이 Mac에서 바로 실행·테스트 (이 Mac의 칩용) |
+  | `Orrery-macos-arm64.zip` | Apple Silicon(M1 이후) Mac 사용자에게 보내는 파일 |
+  | `Orrery-macos-x64.zip` | Intel Mac 사용자에게 보내는 파일 |
+  | `Orrery-windows-x64.zip` | Windows 사용자에게 보내는 파일. 풀면 `Orrery\Orrery.exe` |
 
+- Mac은 칩별로 나눠 보냅니다. 두 칩 공용 앱은 Electron을 두 벌 담아 크기가 두 배 가까이 됩니다. 칩은 Apple 메뉴 → 이 Mac에 관하여의 "칩"(Apple M…)이나 "프로세서"(Intel)로 확인합니다.
 - Mac은 꼭 zip으로 보냅니다. `.app`은 폴더라 그대로 보낼 수 없고, 압축 없이 옮기면 실행 권한과 서명이 깨집니다.
-- 아키텍처별 macOS 실행파일(`orrery-macos-arm64`·`orrery-macos-x64`)과 번들·blob 같은 중간 결과는 숨김 폴더 `release/.work/`에, 받아 둔 Node 런타임은 `release/.node/`에 둡니다.
-- Apple Developer ID 서명·공증은 하지 않습니다. 그래서 받은 Mac에서 처음 열 때 Gatekeeper가 막으며, **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 한 번 거쳐야 합니다(또는 `xattr -dr com.apple.quarantine Orrery.app`). 앱은 응용 프로그램 폴더로 옮긴 뒤 여는 것을 권합니다.
-- 앱 아이콘은 `scripts/icon/orrery-app.svg`를 `rsvg-convert -w 1024 -h 1024`로 그린 `orrery-app-1024.png`에서 만듭니다.
-- `scripts/package.mjs`가 서버를 CommonJS 한 파일로 묶고, `web/dist`를 SEA 자산으로 넣은 blob을 공식 Node 런타임(`NODE_VERSION`, 현재 24 LTS)에 `postject`로 주입합니다. 런타임은 nodejs.org에서 한 번 받아 `release/.node/`에 두며 `SHASUMS256.txt`로 검증합니다. Node 버전을 올릴 때는 이 상수만 바꿉니다.
-- Windows `node.exe`의 Authenticode 서명은 주입하면 깨지므로 제거합니다. 배포용 서명은 별도로 해야 합니다.
+- Windows는 zip을 모두 푼 뒤 `Orrery.exe`를 실행합니다. 함께 든 DLL·리소스 파일이 같은 폴더에 있어야 합니다.
+- `scripts/package.mjs`가 서버(`server.cjs`)와 Electron 메인 프로세스(`main.cjs`, 원본 `desktop/src/main.ts`)를 esbuild로 묶고, 빌드된 웹(`web/`)과 함께 `@electron/packager`로 앱을 만듭니다. Electron 버전은 루트 `package.json`의 `electron`(정확한 버전)을 따르며, `@electron/get`이 한 번 받아 캐시하고 공개된 SHA-256으로 검증합니다. Electron을 올릴 때는 그 버전과 스크립트의 `NODE_TARGET`(Electron 안의 Node 메이저)을 함께 바꿉니다.
+- 칩별 앱 원본과 번들·아이콘 같은 중간 결과는 숨김 폴더 `release/.work/`에 둡니다.
+- Apple Developer ID 서명·공증과 Windows 코드 서명은 하지 않습니다. 그래서 받은 Mac에서 처음 열 때 Gatekeeper가 막으며, **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 한 번 거쳐야 합니다(또는 `xattr -dr com.apple.quarantine Orrery.app`). 앱은 응용 프로그램 폴더로 옮긴 뒤 여는 것을 권합니다. Windows에서 SmartScreen이 막으면 **추가 정보 → 실행**을 누릅니다.
+- 앱 아이콘은 `scripts/icon/orrery-app.svg`를 `rsvg-convert -w 1024 -h 1024`로 그린 `orrery-app-1024.png`에서 만듭니다(macOS `.icns`, Windows `.ico`).
 
-실행파일의 동작:
+앱의 동작:
 
-- 더블클릭하면 기본 브라우저를 엽니다. Windows는 콘솔 창에 주소를 출력하며 창을 닫거나 `Ctrl+C`로 종료합니다. macOS `Orrery.app`은 창과 Dock 아이콘 없이 백그라운드 서버로 돌고, 로그(경고 이상)는 데이터 폴더의 `orrery.log`에 씁니다.
-- 상단바의 전원 버튼으로 종료합니다(실행파일에서만 보임).
-- Finder는 앱 프로세스가 끝나기 전에는 다시 더블클릭해도 무시하므로, `Orrery.app`은 서버를 분리된 자식 프로세스로 띄우고 바로 끝납니다. 다시 열면 실행 중인 서버를 찾아 브라우저만 엽니다.
-- 포트는 4820을 우선 씁니다(브라우저가 프로필·리전 선택을 주소별로 기억하므로). 같은 빌드의 Orrery가 떠 있으면 그 창만 열고 끝납니다. 다른 빌드(업데이트 전 버전)면 그쪽을 종료시키고 이어받으며, 다른 프로그램이 쓰고 있으면 빈 포트를 고릅니다.
-- 캐시는 `~/Library/Application Support/Orrery/cache`(macOS) 또는 `%LOCALAPPDATA%\Orrery\cache`(Windows)에 둡니다. `.env`는 읽지 않으며 설정은 환경 변수로만 줍니다.
+- Electron 메인 프로세스가 서버를 별도 Node 프로세스(utility process)로 띄우고, 서버가 준비되면 그 주소를 Orrery 창에 엽니다. 창 안의 외부 링크(AWS CLI 설치 안내 등)는 기본 브라우저로 열립니다.
+- 창을 닫으면(macOS는 ⌘Q도) 앱과 서버가 함께 종료됩니다. 이미 실행 중일 때 다시 열면 새로 뜨지 않고 열린 창을 앞으로 가져옵니다.
+- 포트는 4820을 우선 씁니다(창이 프로필·리전 선택을 주소별로 기억하므로). 다른 빌드의 Orrery(업데이트 전 버전)가 쓰고 있으면 그쪽을 종료시키고 이어받으며, 다른 프로그램이 쓰고 있으면 빈 포트를 고릅니다.
+- 캐시는 `~/Library/Application Support/Orrery/cache`(macOS) 또는 `%LOCALAPPDATA%\Orrery\cache`(Windows)에, 로그(경고 이상)는 같은 폴더의 `orrery.log`에 씁니다. 서버가 시작하지 못하면 오류와 로그 위치를 대화상자로 보여 주고 종료합니다.
+- 창의 저장값(프로필·리전 선택, 테마, 모니터링 묶음)은 Electron 데이터 폴더의 `Session`에 있습니다(macOS는 위와 같은 `Orrery` 폴더, Windows는 `%APPDATA%\Orrery`). 브라우저로 쓰던 시절의 저장값은 옮겨지지 않습니다.
+- `.env`는 읽지 않으며 설정은 환경 변수로만 줍니다.
 - 프로필을 만들거나 SSO 로그인을 하려면 AWS CLI(`aws configure`, `aws sso login`)가 필요합니다. 프로필이 하나도 없으면 첫 화면에서 OS별 AWS CLI 설치와 `aws configure` / `aws configure sso` / `aws sso login`을 안내하고, 설정 후 **다시 확인**을 누르면 재시작 없이 새 프로필을 읽습니다.
 
 ## 읽기 전용 보장
@@ -80,7 +81,7 @@ shared/   그래프 모델 타입 (ResourceNode / ResourceEdge / MetricsBundle �
 server/   Fastify API
   src/aws/          자격증명 소스 추상화, 클라이언트 팩토리, 읽기 전용 가드
   src/http/         로컬 전용 요청 필터 (Host·Sec-Fetch-Site)
-  src/runtime.ts    저장소 실행과 실행파일 실행의 차이 (내장 웹 자산, 데이터 폴더, 포트, 브라우저 열기)
+  src/runtime.ts    저장소 실행과 데스크톱 앱 실행의 차이 (함께 담긴 웹, 데이터 폴더, 포트, 창에 주소 알리기)
   src/collectors/   서비스별 수집기 (network, ec2, elb, rds, lambda, ecs, appsync, …)
   src/graph/        수집 결과 병합, refs → 관계 해석, 경보 부착
   src/metrics/      CloudWatch GetMetricData 카탈로그와 트래픽 정규화
@@ -89,7 +90,8 @@ web/      React 19 + Vite
   src/canvas/       React Flow 토폴로지 (플레이트·자원·집계 노드, 애니메이션 엣지)
   src/views/        유형별 보기
   src/panels/       상단바, 필터 레일, 인스펙터
-scripts/  package.mjs: Windows·macOS 단일 실행파일 빌드
+desktop/  Electron 메인 프로세스 (서버 실행, 창, 메뉴, 외부 링크)
+scripts/  package.mjs: Windows·macOS 데스크톱 앱 빌드
 ```
 
 ### 자격증명 확장

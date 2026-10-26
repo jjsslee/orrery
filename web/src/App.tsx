@@ -10,7 +10,6 @@ import { RegionPrompt } from './canvas/RegionPrompt';
 import { SetupGuide } from './canvas/SetupGuide';
 import { Monitoring } from './views/Monitoring';
 import { TypeView } from './views/TypeView';
-import { BrandMark } from './components/Brand';
 
 export default function App() {
   const bootstrap = useStore((s) => s.bootstrap);
@@ -21,7 +20,6 @@ export default function App() {
   const region = useStore((s) => s.region);
   const setup = useStore((s) => s.setup);
   const idle = useStore((s) => !s.loading.active && !s.loading.error);
-  const closed = useStore((s) => s.closed);
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
 
@@ -62,22 +60,6 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [select]);
-
-  if (closed) {
-    return (
-      <main className="closed">
-        <div className="load-card" role="status">
-          <div className="load-head">
-            <BrandMark size={28} />
-            <div>
-              <div className="load-title">Orrery를 종료했습니다</div>
-              <div className="load-sub">다시 쓰려면 Orrery를 여세요. 이 탭은 닫아도 됩니다.</div>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
 
   return (
     <div className={`app ${view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''}`}>

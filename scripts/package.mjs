@@ -1,119 +1,62 @@
 #!/usr/bin/env node
 /**
- * Builds single-file executables of Orrery (Node SEA) for macOS and Windows.
+ * Builds the Orrery desktop app (Electron) for macOS and Windows.
  * Run on macOS: `npm run package` (all targets) or `npm run package -- macos-arm64`.
  *
- * 1. Bundle the server into one CommonJS file (SEA entry points are CommonJS).
- * 2. Embed web/dist as SEA assets ("web/<path>") and build the SEA blob with
- *    the same Node version the executables run on.
- * 3. Per target: take the official Node runtime (downloaded once into
- *    release/.node, SHA-256 checked against nodejs.org's SHASUMS256.txt),
- *    drop its signature, inject the blob with postject, and ad-hoc sign the
- *    macOS binaries (Apple Silicon refuses to run unsigned code).
- * 4. Join the macOS binaries into one universal Orrery.app (Finder opens it
- *    like any app, no Terminal) and zip it and the Windows exe for handing out.
+ * 1. Bundle the server (server.cjs) and the Electron main process (main.cjs)
+ *    with esbuild and stage them with the built web app (web/) as the app.
+ * 2. Per target: @electron/packager takes the official Electron build
+ *    (downloaded once by @electron/get and checked against Electron's
+ *    published SHA-256 sums), names it Orrery, sets the icon and packs the
+ *    staged app into app.asar. Renaming breaks Electron's own macOS signature
+ *    and Apple Silicon refuses to run unsigned code, so the apps are ad-hoc
+ *    signed again.
+ * 3. Zip each app for handing out: one per Mac chip, since an app for both
+ *    would carry Electron twice.
  *
- * release/ ends up with Orrery.app, Orrery-macos.zip, orrery-windows-x64.exe
- * and orrery-windows-x64.zip; everything else stays in the hidden .work and
- * .node folders.
+ * release/ ends up with Orrery.app (for this Mac), Orrery-macos-arm64.zip,
+ * Orrery-macos-x64.zip and Orrery-windows-x64.zip; everything else stays in
+ * the hidden .work folder.
  */
 import { build } from 'esbuild';
-import postject from 'postject';
-import { createHash } from 'node:crypto';
+import { packager } from '@electron/packager';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const NODE_VERSION = '24.22.1';
-const NODE_DIST = `https://nodejs.org/dist/v${NODE_VERSION}`;
-const SEA_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 const TARGETS = [
-  { name: 'macos-arm64', dist: 'darwin-arm64', file: 'orrery-macos-arm64' },
-  { name: 'macos-x64', dist: 'darwin-x64', file: 'orrery-macos-x64' },
-  { name: 'windows-x64', dist: 'win-x64', file: 'orrery-windows-x64.exe' },
+  { name: 'macos-arm64', platform: 'darwin', arch: 'arm64', zip: 'Orrery-macos-arm64.zip' },
+  { name: 'macos-x64', platform: 'darwin', arch: 'x64', zip: 'Orrery-macos-x64.zip' },
+  { name: 'windows-x64', platform: 'win32', arch: 'x64', zip: 'Orrery-windows-x64.zip' },
 ];
 
 const BUNDLE_ID = 'io.github.jjsslee.orrery';
+// The Node inside Electron 44; raise with the electron devDependency.
+const NODE_TARGET = 'node24';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
-// Distinct per build so a newly opened Orrery replaces a different one still running in the background.
+// The installed electron package (the main process typings) decides the Electron that ships.
+const electronVersion = createRequire(import.meta.url)('electron/package.json').version;
+// Distinct per build so a newly opened Orrery replaces a different one still running.
 const buildId = `${version}+${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}`;
 const out = join(root, 'release');
 const work = join(out, '.work');
-const runtimes = join(out, '.node', `v${NODE_VERSION}`);
+const stage = join(work, 'app');
 const webDist = join(root, 'web', 'dist');
+const iconSource = join(root, 'scripts', 'icon', 'orrery-app-1024.png');
 
 const wanted = process.argv.slice(2);
 const targets = wanted.length ? TARGETS.filter((t) => wanted.includes(t.name)) : TARGETS;
 if (wanted.length && targets.length !== wanted.length) fail(`알 수 없는 대상: ${wanted.join(', ')} (가능: ${TARGETS.map((t) => t.name).join(', ')})`);
-if (process.platform !== 'darwin') fail('macOS에서 실행하세요: macOS 실행파일은 codesign으로 서명해야 합니다.');
-if (!existsSync(join(webDist, 'index.html'))) fail('web/dist가 없습니다. 먼저 `npm run build`를 실행하세요.');
+if (process.platform !== 'darwin') fail('macOS에서 실행하세요: macOS 앱은 codesign으로 서명해야 합니다.');
+if (!statSync(join(webDist, 'index.html'), { throwIfNoEntry: false })) fail('web/dist가 없습니다. 먼저 `npm run build`를 실행하세요.');
 
 function fail(message) {
   console.error(message);
   process.exit(1);
-}
-
-function filesUnder(dir) {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    return statSync(path).isDirectory() ? filesUnder(path) : [path];
-  });
-}
-
-let sums;
-async function expectedSha(remote) {
-  if (!sums) {
-    const res = await fetch(`${NODE_DIST}/SHASUMS256.txt`);
-    if (!res.ok) fail(`SHASUMS256.txt를 받지 못했습니다: ${res.status}`);
-    sums = new Map((await res.text()).trim().split('\n').map((line) => line.split(/\s+/).reverse()));
-  }
-  return sums.get(remote) ?? fail(`SHASUMS256.txt에 ${remote}가 없습니다`);
-}
-
-/** The official Node runtime for one platform, downloaded once and checksum-verified. */
-async function nodeRuntime(dist) {
-  const windows = dist.startsWith('win');
-  const binary = join(runtimes, dist, windows ? 'node.exe' : 'node');
-  if (existsSync(binary)) return binary;
-  const remote = windows ? `${dist}/node.exe` : `node-v${NODE_VERSION}-${dist}.tar.gz`;
-  console.log(`  Node ${NODE_VERSION} ${dist} 받는 중`);
-  const res = await fetch(`${NODE_DIST}/${remote}`);
-  if (!res.ok) fail(`${remote}를 받지 못했습니다: ${res.status}`);
-  const data = Buffer.from(await res.arrayBuffer());
-  const sha = createHash('sha256').update(data).digest('hex');
-  if (sha !== (await expectedSha(remote))) fail(`${remote}의 SHA-256이 맞지 않습니다`);
-  mkdirSync(dirname(binary), { recursive: true });
-  if (windows) {
-    writeFileSync(binary, data);
-  } else {
-    const tarball = `${binary}.tar.gz`;
-    writeFileSync(tarball, data);
-    execFileSync('tar', ['-xzf', tarball, '-C', dirname(binary), '--strip-components=2', `node-v${NODE_VERSION}-${dist}/bin/node`]);
-    rmSync(tarball);
-  }
-  return binary;
-}
-
-/**
- * node.exe ships Authenticode-signed and injecting the blob breaks that
- * signature; drop it (what `signtool remove /s` does) rather than ship a
- * broken one. Clears the PE security directory and cuts the certificate table.
- */
-function stripAuthenticode(file) {
-  const pe = readFileSync(file);
-  const optionalHeader = pe.readUInt32LE(0x3c) + 24;
-  const pe32plus = pe.readUInt16LE(optionalHeader) === 0x20b;
-  const securityDir = optionalHeader + (pe32plus ? 112 : 96) + 4 * 8;
-  const offset = pe.readUInt32LE(securityDir);
-  const size = pe.readUInt32LE(securityDir + 4);
-  if (!offset || !size) return;
-  pe.writeUInt32LE(0, securityDir);
-  pe.writeUInt32LE(0, securityDir + 4);
-  pe.writeUInt32LE(0, optionalHeader + 64); // checksum: only verified for drivers
-  writeFileSync(file, offset + size === pe.length ? pe.subarray(0, offset) : pe);
 }
 
 const mb = (path) => `${(statSync(path).size / 1024 / 1024).toFixed(0)}MB`;
@@ -131,112 +74,109 @@ function zip(source, dest) {
   console.log(`  ${relative(root, dest)} (${mb(dest)})`);
 }
 
-function infoPlist() {
-  const entries = {
-    CFBundleName: 'Orrery',
-    CFBundleDisplayName: 'Orrery',
-    CFBundleIdentifier: BUNDLE_ID,
-    CFBundleExecutable: 'orrery',
-    CFBundleIconFile: 'Orrery',
-    CFBundlePackageType: 'APPL',
-    CFBundleShortVersionString: version,
-    CFBundleVersion: version,
-    // No Dock icon: Orrery is a background server whose window is the browser tab.
-    LSUIElement: true,
-  };
-  const value = (v) => (v === true ? '<true/>' : `<string>${v}</string>`);
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-    '<plist version="1.0">',
-    '<dict>',
-    ...Object.entries(entries).map(([k, v]) => `  <key>${k}</key>${value(v)}`),
-    '</dict>',
-    '</plist>',
-    '',
-  ].join('\n');
-}
-
 /** Orrery.icns from the 1024px render of scripts/icon/orrery-app.svg, with macOS's own sips and iconutil. */
 function appIcon(dest) {
-  const source = join(root, 'scripts', 'icon', 'orrery-app-1024.png');
   const iconset = join(work, 'Orrery.iconset');
   mkdirSync(iconset, { recursive: true });
   for (const size of [16, 32, 128, 256, 512]) {
     for (const scale of [1, 2]) {
       const px = String(size * scale);
-      execFileSync('sips', ['-z', px, px, source, '--out', join(iconset, `icon_${size}x${size}${scale === 2 ? '@2x' : ''}.png`)], { stdio: 'ignore' });
+      execFileSync('sips', ['-z', px, px, iconSource, '--out', join(iconset, `icon_${size}x${size}${scale === 2 ? '@2x' : ''}.png`)], { stdio: 'ignore' });
     }
   }
   execFileSync('iconutil', ['-c', 'icns', iconset, '-o', dest]);
 }
 
-rmSync(work, { recursive: true, force: true });
-mkdirSync(work, { recursive: true });
+/** Orrery.ico for the Windows exe from the same render; the images stay PNG, which Windows reads since Vista. */
+function windowsIcon(dest) {
+  const sizes = [16, 24, 32, 48, 64, 128, 256];
+  const images = sizes.map((size) => {
+    const png = join(work, `ico-${size}.png`);
+    execFileSync('sips', ['-z', String(size), String(size), iconSource, '--out', png], { stdio: 'ignore' });
+    return readFileSync(png);
+  });
+  const header = Buffer.alloc(6 + 16 * images.length);
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(images.length, 4);
+  let offset = header.length;
+  images.forEach((png, i) => {
+    const entry = 6 + 16 * i;
+    header.writeUInt8(sizes[i] % 256, entry); // width and height; 0 means 256
+    header.writeUInt8(sizes[i] % 256, entry + 1);
+    header.writeUInt16LE(1, entry + 4); // color planes
+    header.writeUInt16LE(32, entry + 6); // bits per pixel
+    header.writeUInt32LE(png.length, entry + 8);
+    header.writeUInt32LE(offset, entry + 12);
+    offset += png.length;
+  });
+  writeFileSync(dest, Buffer.concat([header, ...images]));
+}
 
-console.log('서버 번들');
-await build({
-  entryPoints: [join(root, 'server', 'src', 'index.ts')],
+rmSync(work, { recursive: true, force: true });
+mkdirSync(stage, { recursive: true });
+
+console.log('번들');
+const bundle = (entry, outfile, options) => build({
+  entryPoints: [entry],
   bundle: true,
   platform: 'node',
   format: 'cjs',
-  target: `node${NODE_VERSION.split('.')[0]}`,
+  target: NODE_TARGET,
   minify: true,
-  outfile: join(work, 'server.cjs'),
-  // The server derives repo paths from import.meta.url; CommonJS has __filename (the executable, under SEA).
+  outfile,
+  logLevel: 'warning',
+  ...options,
+});
+await bundle(join(root, 'server', 'src', 'index.ts'), join(stage, 'server.cjs'), {
+  // The server derives paths from import.meta.url; CommonJS has __filename (server.cjs inside app.asar).
   define: { 'import.meta.url': '__orreryMetaUrl', __ORRERY_BUILD__: JSON.stringify(buildId) },
   banner: { js: 'var __orreryMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
-  logLevel: 'warning',
 });
+await bundle(join(root, 'desktop', 'src', 'main.ts'), join(stage, 'main.cjs'), { external: ['electron'] });
+cpSync(webDist, join(stage, 'web'), { recursive: true });
+writeFileSync(join(stage, 'package.json'), `${JSON.stringify({ name: 'orrery', productName: 'Orrery', version, main: 'main.cjs' }, null, 2)}\n`);
 
-console.log('SEA blob');
-const assets = Object.fromEntries(filesUnder(webDist).map((path) => [`web/${relative(webDist, path).split(sep).join('/')}`, path]));
-const seaConfig = join(work, 'sea-config.json');
-const blob = join(work, 'sea-prep.blob');
-writeFileSync(seaConfig, JSON.stringify({
-  main: join(work, 'server.cjs'),
-  output: blob,
-  disableExperimentalSEAWarning: true,
-  // Off so one blob fits every platform's runtime.
-  useSnapshot: false,
-  useCodeCache: false,
-  assets,
-}, null, 2));
-execFileSync(await nodeRuntime(`darwin-${process.arch}`), ['--experimental-sea-config', seaConfig], { stdio: 'inherit' });
-const blobData = readFileSync(blob);
+const icons = { darwin: join(work, 'Orrery.icns'), win32: join(work, 'Orrery.ico') };
+if (targets.some((t) => t.platform === 'darwin')) appIcon(icons.darwin);
+if (targets.some((t) => t.platform === 'win32')) windowsIcon(icons.win32);
 
-const macBinaries = [];
+console.log(`Electron ${electronVersion}`);
 for (const t of targets) {
   console.log(t.name);
-  const macos = t.dist.startsWith('darwin');
-  // The per-arch macOS binaries only feed the universal Orrery.app, so they stay in the work folder.
-  const exe = join(macos ? work : out, t.file);
-  rmSync(exe, { force: true });
-  copyFileSync(await nodeRuntime(t.dist), exe);
-  chmodSync(exe, 0o755);
-  if (macos) execFileSync('codesign', ['--remove-signature', exe]);
-  else stripAuthenticode(exe);
-  await postject.inject(exe, 'NODE_SEA_BLOB', blobData, { sentinelFuse: SEA_FUSE, ...(macos ? { machoSegmentName: 'NODE_SEA' } : {}) });
-  if (macos) execFileSync('codesign', ['--sign', '-', exe]);
-  console.log(`  ${relative(root, exe)} (${mb(exe)})`);
-  if (macos) macBinaries.push(exe);
-  else zip(exe, `${exe.replace(/\.exe$/, '')}.zip`);
-}
-
-if (macBinaries.length) {
-  console.log('Orrery.app');
-  const app = join(out, 'Orrery.app');
-  const contents = join(app, 'Contents');
-  rmSync(app, { recursive: true, force: true });
-  mkdirSync(join(contents, 'MacOS'), { recursive: true });
-  mkdirSync(join(contents, 'Resources'));
-  const main = join(contents, 'MacOS', 'orrery');
-  // One app for Apple Silicon and Intel Macs; each slice keeps its own injected blob.
-  if (macBinaries.length > 1) execFileSync('lipo', ['-create', ...macBinaries, '-output', main]);
-  else copyFileSync(macBinaries[0], main);
-  chmodSync(main, 0o755);
-  writeFileSync(join(contents, 'Info.plist'), infoPlist());
-  appIcon(join(contents, 'Resources', 'Orrery.icns'));
-  execFileSync('codesign', ['--force', '--sign', '-', app]);
-  zip(app, join(out, 'Orrery-macos.zip'));
+  const [dir] = await packager({
+    dir: stage,
+    out: work,
+    name: 'Orrery',
+    platform: t.platform,
+    arch: t.arch,
+    electronVersion,
+    appVersion: version,
+    buildVersion: version,
+    appBundleId: BUNDLE_ID,
+    // Otherwise Windows shows Electron's own "Copyright (C) 2015 GitHub, Inc.".
+    appCopyright: `Copyright © ${new Date().getFullYear()} jjsslee`,
+    icon: icons[t.platform],
+    asar: true,
+    prune: false,
+    quiet: true,
+    win32metadata: { CompanyName: 'Orrery', ProductName: 'Orrery', FileDescription: 'Orrery', OriginalFilename: 'Orrery.exe' },
+  });
+  if (t.platform === 'darwin') {
+    const app = join(dir, 'Orrery.app');
+    execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: ['ignore', 'ignore', 'pipe'] });
+    zip(app, join(out, t.zip));
+    // The app for this Mac's chip stays next to the zips to open right away.
+    if (t.arch === process.arch) {
+      const local = join(out, 'Orrery.app');
+      rmSync(local, { recursive: true, force: true });
+      renameSync(app, local);
+      console.log(`  ${relative(root, local)}`);
+    }
+  } else {
+    // Unzipped, the folder reads Orrery\Orrery.exe rather than Orrery-win32-x64.
+    const folder = join(work, 'Orrery');
+    rmSync(folder, { recursive: true, force: true });
+    renameSync(dir, folder);
+    zip(folder, join(out, t.zip));
+  }
 }

@@ -1,32 +1,27 @@
 /**
- * Where Orrery runs: from the repo (`npm run dev` / `npm start`) or as a
- * single executable built by scripts/package.mjs (Node SEA). The executable
- * carries the web app as embedded assets, keeps its cache in the OS user data
- * folder and opens the default browser itself.
+ * Where Orrery runs: from the repo (`npm run dev` / `npm start`) or inside the
+ * Orrery desktop app built by scripts/package.mjs. There the Electron main
+ * process (desktop/src/main.ts) starts this server as a utility process next
+ * to the built web app and shows it in its own window; the cache lives in the
+ * OS user data folder.
  */
-import { getAsset, getAssetKeys, isSea } from 'node:sea';
-import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
-import { extname, join } from 'node:path';
+import { extname, join, relative, sep } from 'node:path';
 
-export const packaged = isSea();
+/** Electron hands a utility process this port to talk back to the main process. */
+const parentPort = (process as NodeJS.Process & { parentPort?: { postMessage(message: unknown): void } }).parentPort;
 
-/** Launched as Orrery.app (from Finder): there is no console window, so the server detaches and logs to a file. */
-export const macApp = packaged && process.platform === 'darwin' && process.execPath.includes('.app/Contents/MacOS/');
+export const packaged = parentPort !== undefined;
 
 declare const __ORRERY_BUILD__: string | undefined;
-/** Set by the packager; lets a newly opened build replace a different one still running in the background. */
+/** Set by the packager; lets a newly opened build replace a different one still running. */
 export const BUILD = typeof __ORRERY_BUILD__ === 'string' ? __ORRERY_BUILD__ : 'dev';
 
-/**
- * Finder treats Orrery.app as running until the launched process exits and
- * ignores double-clicks meanwhile. So the launch process starts the server as
- * a detached copy of itself and exits, and every double-click reaches the
- * server's own logic (open the running one, or start).
- */
-export function detachServer(): void {
-  spawn(process.execPath, [], { detached: true, stdio: 'ignore', env: { ...process.env, ORRERY_DETACHED: '1' } }).unref();
+/** Tells the desktop app where the server listens; it opens its window there. */
+export function showWindow(url: string): void {
+  parentPort?.postMessage({ url });
 }
 
 /** ~/Library/Application Support/Orrery, %LOCALAPPDATA%\Orrery, or $XDG_DATA_HOME/orrery. */
@@ -46,13 +41,17 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-/** The built web app embedded by the packager (asset keys "web/<path>"), keyed by URL path. */
-export function embeddedWeb(): Map<string, { body: Buffer; type: string }> {
+/** The built web app shipped with the packaged server, read once and keyed by URL path. */
+export function webFiles(root: string): Map<string, { body: Buffer; type: string }> {
   const files = new Map<string, { body: Buffer; type: string }>();
-  for (const key of getAssetKeys()) {
-    if (!key.startsWith('web/')) continue;
-    files.set(key.slice('web'.length), { body: Buffer.from(getAsset(key)), type: MIME[extname(key)] ?? 'application/octet-stream' });
-  }
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else files.set(`/${relative(root, path).split(sep).join('/')}`, { body: readFileSync(path), type: MIME[extname(name)] ?? 'application/octet-stream' });
+    }
+  };
+  walk(root);
   return files;
 }
 
@@ -89,15 +88,4 @@ export async function replaceOrrery(port: number): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 150));
   }
   return false;
-}
-
-export function openBrowser(url: string): void {
-  // `start` is a cmd builtin; verbatim arguments keep the empty window title ("") intact.
-  const [cmd, args] =
-    process.platform === 'darwin' ? ['open', [url]]
-    : process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', url]]
-    : ['xdg-open', [url]];
-  spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: process.platform === 'win32' })
-    .on('error', () => console.log(`브라우저를 열지 못했습니다. 직접 여세요: ${url}`))
-    .unref();
 }
