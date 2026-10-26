@@ -1,5 +1,6 @@
 import { CloudWatchClient, GetMetricDataCommand, type MetricDataQuery } from '@aws-sdk/client-cloudwatch';
 import type { MetricPoint, MonitoringMetricRequest, MonitoringMetricSeries, MonitoringMetricsSnapshot, MonitoringResource, ResourceNode } from '@orrery/shared';
+import { MAX_OBSERVED_RESOURCES } from '@orrery/shared';
 import { queriesForNode, type MetricQuery } from '../metrics/cloudwatch.ts';
 import type { MonitoringSession } from './alarms.ts';
 import { scopeKey } from '../aws/sessions.ts';
@@ -10,7 +11,7 @@ const bad = (message: string): never => { throw Object.assign(new Error(message)
 export function validateMetricRequest(input: unknown, now = Date.now()): MonitoringMetricRequest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return bad('지표 조회 요청을 확인하세요.');
   const body = input as MonitoringMetricRequest;
-  if (!Array.isArray(body.resourceKeys) || body.resourceKeys.length < 1 || body.resourceKeys.length > 4 || body.resourceKeys.some((k) => typeof k !== 'string' || k.length > 2048) || new Set(body.resourceKeys).size !== body.resourceKeys.length) return bad('비교 자원은 중복 없이 1~4개 선택하세요.');
+  if (!Array.isArray(body.resourceKeys) || body.resourceKeys.length < 1 || body.resourceKeys.length > MAX_OBSERVED_RESOURCES || body.resourceKeys.some((k) => typeof k !== 'string' || k.length > 2048) || new Set(body.resourceKeys).size !== body.resourceKeys.length) return bad(`비교 자원은 중복 없이 1~${MAX_OBSERVED_RESOURCES}개 선택하세요.`);
   const start = Date.parse(body.range?.startTime), end = Date.parse(body.range?.endTime);
   if (typeof body.range?.startTime !== 'string' || typeof body.range?.endTime !== 'string' || !/^\d{4}-\d\d-\d\dT/.test(body.range.startTime) || !/^\d{4}-\d\d-\d\dT/.test(body.range.endTime) || !Number.isFinite(start) || !Number.isFinite(end) || start >= end || end - start > 7 * DAY || end > now || start < now - 455 * DAY) return bad('기간은 과거 455일 이내, 최대 7일이며 종료가 시작보다 늦어야 합니다.');
   if (body.metricIds !== undefined && (!Array.isArray(body.metricIds) || body.metricIds.length < 1 || body.metricIds.length > 100 || body.metricIds.some((id) => typeof id !== 'string' || id.length > 100) || new Set(body.metricIds).size !== body.metricIds.length)) return bad('지표 선택을 확인하세요.');

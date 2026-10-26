@@ -19,10 +19,11 @@
   --plate-lane: rgba(255, 255, 255, 0.025);
   --plate-lane-line: rgba(255, 255, 255, 0.1);
 
-  --ink: #e9eef8;
-  --ink-2: #a4b0ca;
-  --ink-3: #6e7b99;
-  --ink-4: #4a5572;
+  /* Text ink. ink-3 holds >= 5:1 on every panel step; ink-4 is for disabled marks and dividers, never for reading. */
+  --ink: #edf1f9;
+  --ink-2: #b4bed3;
+  --ink-3: #909cb8;
+  --ink-4: #5f6b88;
 
   --focus: #f5f7fb;
   --pulse: #f5d58a;
@@ -40,6 +41,18 @@
   --status-critical: #ff5a5f;
   --status-inactive: #6e7b99;
   --status-unknown: #4a5572;
+
+  /* Selection is neutral so category and status hues keep their meaning. */
+  --select-bg: rgba(237, 241, 249, 0.06);
+  --select-line: rgba(237, 241, 249, 0.55);
+
+  /* Type scale. 11.5px is the floor for any text; reading text sits at 13.5px. */
+  --fs-meta: 11.5px;
+  --fs-small: 12.5px;
+  --fs-body: 13.5px;
+  --fs-title: 15px;
+  --fs-heading: 18px;
+  --fs-figure: 22px;
 
   --font-ui: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -73,9 +86,11 @@
   --plate-lane: rgba(0, 0, 0, 0.02);
   --plate-lane-line: rgba(0, 0, 0, 0.1);
   --ink: #0f172a;
-  --ink-2: #44506b;
-  --ink-3: #6b7790;
-  --ink-4: #9aa5bb;
+  --ink-2: #3f4a63;
+  --ink-3: #586580;
+  --ink-4: #8d98ae;
+  --select-bg: rgba(15, 23, 42, 0.05);
+  --select-line: rgba(15, 23, 42, 0.55);
   --focus: #0f172a;
   --pulse: #b8860b;
   --pulse-soft: rgba(184, 134, 11, 0.35);
@@ -85,9 +100,10 @@
   --cat-storage: #1f8f57;
   --cat-security: #c0262e;
   --cat-integration: #c43f98;
-  --status-healthy: #1b9c57;
-  --status-warning: #c77d0e;
-  --status-critical: #d6353b;
+  /* Status hues double as text (alarm states, notices): each holds >= 4.3:1 on the light panels. */
+  --status-healthy: #157f47;
+  --status-warning: #a35f00;
+  --status-critical: #c8282e;
   --status-inactive: #7c879d;
   --status-unknown: #a0a9bb;
   --shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.12), 0 1px 0 rgba(255, 255, 255, 0.6) inset;

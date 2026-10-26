@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { MAX_OBSERVED_RESOURCES } from '@orrery/shared';
 import type { AlarmHistorySnapshot, AlarmRecord, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, MonitoringMetricsSnapshot, SavedResourceGroup, ObservationState, MonitoringScope, MonitoringRelatedSnapshot } from '@orrery/shared';
 import { classifyMonitoringError, metricQuality } from './monitoring-quality';
 import { sameTagCandidates, mergeRelatedCandidates } from './monitoring-related';
@@ -7,6 +8,8 @@ import { api } from '../api/client';
 import { emptyResourceFilters, MONITORING_RESOURCE_TYPES, type ResourceFilters } from './monitoring-resources';
 
 export type TimeRange = '1h' | '3h' | '24h' | '7d' | 'custom';
+/** Resources observed together; shared with the server's metric API so both enforce one ceiling. */
+export const MAX_OBSERVED = MAX_OBSERVED_RESOURCES;
 export function monitoringWindow(range: TimeRange, now = Date.now(), start?: string, end?: string) {
   const endMs = range === 'custom' ? Date.parse(end ?? '') : now;
   const startMs = range === 'custom' ? Date.parse(start ?? '') : endMs - ({ '1h': 1, '3h': 3, '24h': 24, '7d': 168 }[range] * 3600000);
@@ -133,7 +136,7 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
   },
   saveSelection(name) {
     if (!name.trim()) { set({ groupsError: '저장할 구성 이름을 입력하세요.' }); return; }
-    if (!get().selectedResources.length || get().selectedResources.length > 4) { set({ groupsError: '저장할 자원을 1~4개 선택하세요.' }); return; }
+    if (!get().selectedResources.length || get().selectedResources.length > MAX_OBSERVED) { set({ groupsError: `저장할 자원을 1~${MAX_OBSERVED}개 선택하세요.` }); return; }
     get().saveGroup({ id: crypto.randomUUID(), name: name.trim().slice(0, 80), tagFilters: [], resourceKeys: [...get().selectedResources] });
   },
   async restoreGroup(id) {
@@ -151,9 +154,9 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
       for (const resource of found.resources) items.set(resource.key, resource);
       const resources = [...items.values()];
       const candidates = groupResources(group, resources).map((resource) => resource.key);
-      const legacyTooLarge = group.resourceKeys.length > 4 || candidates.length > 4;
+      const legacyTooLarge = group.resourceKeys.length > MAX_OBSERVED || candidates.length > MAX_OBSERVED;
       controllers.get('metrics')?.abort(); controllers.get('related')?.abort(); if (relatedTimer) clearTimeout(relatedTimer);
-      set({ resources: old ? { ...old, resources } : { scope: found.scope, resources, types: [], complete: false, observation: { attemptedAt: new Date().toISOString() } }, selectedResources: legacyTooLarge ? [] : candidates, metrics: undefined, metricsLoading: false, referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreCandidates: legacyTooLarge ? candidates : [], restoreMissingKeys: found.unresolvedKeys, restoreNotice: legacyTooLarge ? `저장된 구성의 대상이 4개를 넘습니다. 후보 ${candidates.length}개에서 최대 4개를 직접 선택하세요. 원래 구성은 보존됩니다.` : found.unresolvedKeys.length ? `자원 ${found.unresolvedKeys.length}개를 아직 확인하지 못했습니다. 관계 수집 상태를 확인한 뒤 다시 복원하세요.` : !candidates.length ? '현재 조회 범위에 일치하는 자원이 없습니다. 자원 목록을 확인한 뒤 다시 복원하세요.' : `구성 '${group.name}'을 복원했습니다.` });
+      set({ resources: old ? { ...old, resources } : { scope: found.scope, resources, types: [], complete: false, observation: { attemptedAt: new Date().toISOString() } }, selectedResources: legacyTooLarge ? [] : candidates, metrics: undefined, metricsLoading: false, referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreCandidates: legacyTooLarge ? candidates : [], restoreMissingKeys: found.unresolvedKeys, restoreNotice: legacyTooLarge ? `저장된 구성의 대상이 ${MAX_OBSERVED}개를 넘습니다. 후보 ${candidates.length}개에서 최대 ${MAX_OBSERVED}개를 직접 선택하세요. 원래 구성은 보존됩니다.` : found.unresolvedKeys.length ? `자원 ${found.unresolvedKeys.length}개를 아직 확인하지 못했습니다. 관계 수집 상태를 확인한 뒤 다시 복원하세요.` : !candidates.length ? '현재 조회 범위에 일치하는 자원이 없습니다. 자원 목록을 확인한 뒤 다시 복원하세요.' : `구성 '${group.name}'을 복원했습니다.` });
       if (found.resources.length) void get().loadAlarms();
       if (group.tagFilters.length && (MONITORING_RESOURCE_TYPES.some(([type]) => !get().resourceCoverage[type]?.complete) || resources.some((resource) => resource.tagsStatus !== 'complete'))) set({ restoreNotice: `${get().restoreNotice} 태그 조회 범위가 부족하여 아직 확인하지 못한 대상이 있을 수 있습니다.` });
       if (!legacyTooLarge && candidates.length) get().setReferenceResource(candidates[0]);
@@ -173,7 +176,7 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
   },
   toggleResource(key) {
     const selected = get().selectedResources;
-    if (!selected.includes(key) && selected.length >= 4) { set({ metricsError: '자원 비교는 최대 4개까지 가능합니다.' }); return; }
+    if (!selected.includes(key) && selected.length >= MAX_OBSERVED) { set({ metricsError: `자원 비교는 최대 ${MAX_OBSERVED}개까지 가능합니다.` }); return; }
     controllers.get('metrics')?.abort();
     const next = selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key];
     set({ selectedResources: next, metrics: undefined, metricsLoading: false, metricsError: next.length && next.every((key) => get().resources?.resources.find((resource) => resource.key === key)?.metricsSupported === false) ? '선택한 자원은 CloudWatch 지표를 지원하지 않습니다. 관계와 경보는 계속 확인할 수 있습니다.' : undefined });
@@ -181,7 +184,7 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
   },
   async loadMetrics(refresh = false) {
     const { profile, region, selectedResources, range, customStart, customEnd } = get();
-    if (!selectedResources.length) { set({ metricsError: '비교할 자원을 1~4개 선택하세요.' }); return; }
+    if (!selectedResources.length) { set({ metricsError: `비교할 자원을 1~${MAX_OBSERVED}개 선택하세요.` }); return; }
     const metricResources = selectedResources.filter((key) => get().resources?.resources.find((resource) => resource.key === key)?.metricsSupported !== false);
     if (!metricResources.length) { set({ metrics: undefined, metricsLoading: false, metricsError: '선택한 자원은 CloudWatch 지표를 지원하지 않습니다. 관계와 경보는 계속 확인할 수 있습니다.', autoRefresh: 0 }); return; }
     const r = request('metrics'); set({ metricsLoading: true, metricsError: undefined });

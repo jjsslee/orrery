@@ -39,7 +39,7 @@ test('selection renders resource-specific charts and alarms in the workspace wit
   assert.match(html, /fixture-alarm/);
   assert.ok(html.indexOf('fixture-alarm') < html.indexOf('호출 수'));
   assert.match(html, /유료|비용/);
-  assert.match(html, /fixture-worker 제거/);
+  assert.match(html, /fixture-worker 빼기/);
   assert.doesNotMatch(html, /자원 찾기에서 최대 4개를 선택|선택 지표 조회/);
 });
 
@@ -60,4 +60,29 @@ test('unsupported metrics and regional alarm mapping limits cannot be mistaken f
   assert.match(html, /fixture 글로벌 경보는 선택 리전의 조회 범위/);
   assert.match(html, /연결 구성 확인 중/);
   assert.doesNotMatch(html, /이 자원에 매핑된 경보가 없습니다|선으로 연결된 자원을 찾지 못했습니다/);
+});
+
+test('an added resource can be taken back out wherever it is offered: tray, search result, related candidate and its card', () => {
+  const worker = resource('one', 'fixture-worker'), queue = resource('two', 'fixture-queue');
+  const html = render({ selectedResources: ['one', 'two'], referenceResource: 'one', resources: { scope, resources: [worker, queue], types: ['lambda'], complete: true, observation: observed }, related: { scope, resourceKey: 'one', connected: [{ resource: queue, reasons: [{ kind: 'edge', direction: 'outgoing', edgeKind: 'publishes', evidence: 'unknown' }] }], sameTags: [], graph: { state: 'complete', observation: observed }, tagCoverage: { types: ['lambda'], incompleteTypes: [] } } });
+  assert.equal(html.match(/aria-label="fixture-queue 빼기"/g)?.length, 4);
+  assert.equal(html.match(/aria-label="fixture-worker 빼기"/g)?.length, 3);
+  assert.doesNotMatch(html, /fixture-queue 추가/);
+});
+
+test('a full set of eight keeps the add controls visible but disabled and says how to make room', () => {
+  const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const html = render({ selectedResources: keys, resources: { scope, resources: [...keys.map((key) => resource(key, `fixture-${key}`)), resource('extra', 'fixture-extra')], types: ['lambda'], complete: true, observation: observed } });
+  assert.match(html, /<button[^>]*disabled=""[^>]*aria-label="fixture-extra 추가"|<button[^>]*aria-label="fixture-extra 추가"[^>]*disabled=""/);
+  assert.match(html, /8\/8/);
+  assert.match(html, /하나를 빼세요/);
+});
+
+test('the eight-resource limit is stated before the user hits it: empty tray, remaining slots and the cost note', () => {
+  const empty = render();
+  assert.match(empty, /최대 8개/);
+  const html = render({ selectedResources: ['one'], referenceResource: 'one' });
+  assert.match(html, /1\/8/);
+  assert.match(html, /7개 더 추가할 수 있습니다/);
+  assert.match(html, /최대 8개 자원/);
 });

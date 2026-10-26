@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "orrery-alt-port",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": ["ORRERY_PORT=4821", "npm", "run", "dev"],
+      "port": 5173
     }
   ]
 }

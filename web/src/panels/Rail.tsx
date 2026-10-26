@@ -97,8 +97,7 @@ export function Rail() {
               {(filtered || query || tagFilters.length > 0) && <button type="button" className="link-btn" onClick={resetFilters}>초기화</button>}
             </div>
             <div className="rail-hint">
-              <p>체크한 유형만 지도에 남습니다. 3종 이하로 좁히면 접지 않고 모두 펼칩니다.</p>
-              <p><kbd>{/Mac/i.test(navigator.platform) ? '⌥ Option' : 'Alt'}</kbd> + 클릭: 그 유형만 보기</p>
+              <p>체크한 유형만 지도에 남고, 3종 이하로 좁히면 모두 펼칩니다. <kbd>{/Mac/i.test(navigator.platform) ? '⌥' : 'Alt'}</kbd>+클릭은 그 유형만 봅니다.</p>
             </div>
             {CATEGORY_ORDER.map((c) => {
               const types = TYPES_BY_CATEGORY[c].filter((t) => (counts.byType.get(t) ?? 0) > 0);

@@ -76,3 +76,9 @@
 - 최종 패키징: `node scripts/package.mjs`의 모든 타깃 생성에 성공했다. macOS/Windows zip의 `unzip -tq` 검사, Windows `PE32+ x86-64` 형식 검사, macOS `codesign --verify --deep --strict` 검사를 통과했다. 서명 확인은 Apple Developer ID 공증을 뜻하지 않는다.
 - 실행 확인: macOS ARM 실행파일을 4834 포트에서 실행해 health의 `{ok:true,readOnly:true,build:"0.3.0+20261023T074320Z"}`를 확인했다. 내장 JS `index-CxuLMD0P.js`에 새 자원 중심 화면·태그 조건 추가·선 연결·자동 조회 안내가 포함됐음을 확인했다. Windows/Intel Mac 실제 실행, Apple 공증, AWS 콘솔 UI 대조는 미검증이다.
 - AWS 자원 변경은 수행하지 않았다. 커밋·푸시·GitHub Release는 root 작업에서 진행하며 이 기록은 게시 완료를 뜻하지 않는다.
+
+### 함께 보는 자원 상한 조정 — 2026-10-26
+
+- 최대 4개는 첫 버전의 초기 운영값이었다(`cloudwatch-monitoring-plan.md`: "실데이터 부하 확인 후 조정"). 지원 유형의 자원당 지표 쿼리는 최대 4개(ALB·Lambda의 p95 포함)이므로 8개를 담아도 32개로 한 요청 100개 상한과 SDK 명령 10회 안에 든다. 공개 단가(지표 1,000개당 $0.01) 기준 1분 자동 갱신 비용은 자원 수에 비례한다.
+- 상한을 8개로 올리고 `shared`의 `MAX_OBSERVED_RESOURCES` 하나를 화면 상수와 서버 `validateMetricRequest`가 함께 쓰게 했다. 화면은 빈 상태·남은 자리(칸 표시와 "n개 더 추가할 수 있습니다")·가득 참 안내·비용 문구에 같은 값을 표시하고, 이름 칩을 누르면 해당 카드로 이동한다.
+- 검증: 서버 9개 거부·8개 허용, 상태 9번째 선택 거부, 8개 초과 기존 구성의 직접 선택, 화면의 8/8 가득 참·남은 자리 문구 테스트가 이전 상한에서 실패하는 것을 확인한 뒤 통과시켰다.

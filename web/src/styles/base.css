@@ -9,8 +9,8 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-body);
+  line-height: 1.5;
   letter-spacing: -0.005em;
   font-feature-settings: 'ss05', 'cv01';
   -webkit-font-smoothing: antialiased;

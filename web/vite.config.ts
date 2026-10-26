@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:4820', changeOrigin: true },
+      // Follows the server's ORRERY_PORT so a dev server can run beside an installed Orrery on 4820.
+      '/api': { target: `http://127.0.0.1:${process.env.ORRERY_PORT ?? 4820}`, changeOrigin: true },
     },
   },
   build: { sourcemap: false, chunkSizeWarningLimit: 1500 },

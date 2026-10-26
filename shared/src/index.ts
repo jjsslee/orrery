@@ -317,6 +317,9 @@ export interface AlarmHistorySnapshot {
   observation: ObservationState;
 }
 
+/** Resources observed together in monitoring. The web tray and the metric API both enforce it; at most 4 queries per resource keeps a full set well inside the 100-query request cap. */
+export const MAX_OBSERVED_RESOURCES = 8;
+
 export interface MonitoringMetricRequest {
   resourceKeys: string[];
   range: { startTime: string; endTime: string };

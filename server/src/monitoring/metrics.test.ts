@@ -11,7 +11,8 @@ const body = (keys = ['one']): MonitoringMetricRequest => ({ resourceKeys: keys,
 const session = (send: (command: any) => Promise<any>): MonitoringSession => ({ source: 'profile:test', account: '000000000000', region: 'ap-northeast-2', clients: { get: () => ({ send }) } as unknown as ClientFactory });
 
 test('metric validation rejects resource/query/range/command expansion before AWS', () => {
-  for (const invalid of [body(['a', 'b', 'c', 'd', 'e']), { ...body(), metricIds: Array.from({ length: 101 }, (_, i) => `metric${i}`) }, { ...body(), namespace: 'Custom' }, { ...body(), range: { startTime: new Date(now).toISOString(), endTime: new Date(now + 1000).toISOString() } }, { ...body(), range: { startTime: new Date(now - 8 * 86400_000).toISOString(), endTime: new Date(now - 1).toISOString() } }]) assert.throws(() => validateMetricRequest(invalid, now), { statusCode: 400 });
+  for (const invalid of [body(Array.from({ length: 9 }, (_, i) => `k${i}`)), { ...body(), metricIds: Array.from({ length: 101 }, (_, i) => `metric${i}`) }, { ...body(), namespace: 'Custom' }, { ...body(), range: { startTime: new Date(now).toISOString(), endTime: new Date(now + 1000).toISOString() } }, { ...body(), range: { startTime: new Date(now - 8 * 86400_000).toISOString(), endTime: new Date(now - 1).toISOString() } }]) assert.throws(() => validateMetricRequest(invalid, now), { statusCode: 400 });
+  assert.doesNotThrow(() => validateMetricRequest(body(Array.from({ length: 8 }, (_, i) => `k${i}`)), now));
   assert.throws(() => planMetrics(body(), [], now), /현재 계정/);
   assert.throws(() => planMetrics({ ...body(), metricIds: ['Anything:Sum'] }, [resource('one')], now), /지원하지 않는/);
 });
