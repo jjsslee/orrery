@@ -9,6 +9,8 @@ import {
   ApiGatewayV2Client,
   GetApisCommand,
   GetIntegrationsCommand,
+  GetRoutesCommand,
+  type Route,
   GetStagesCommand as GetStagesV2Command,
   type Api,
   type Integration as IntegrationV2,
@@ -21,10 +23,12 @@ import {
   type ListResourceRecordSetsCommandOutput,
   type ResourceRecordSet,
 } from '@aws-sdk/client-route-53';
-import type { ResourceEdge, ResourceNode } from '@orrery/shared';
+import type { FrontendDiscovery, RequestRoute, ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { edge, iso, nid, tagsToRecord } from './ids.ts';
 import { attempt, chunk, collect, countSummary, errMsg, hostOf, lambdaNameFromArn } from './util.ts';
+import { cloudfrontRouting, integrationArn, restRequestRoute } from './request-routing.ts';
+import { httpCors, restCors } from './cors.ts';
 
 const MAX_V1_INTEGRATION_CALLS = 200;
 const MAX_RECORDS_PER_ZONE = 2000;
@@ -70,7 +74,7 @@ export function summariseRecords(records: ResourceRecordSet[], region: string): 
   return { refs: [...refs], names, byType, count: records.length };
 }
 
-async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
+async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], discovery: FrontendDiscovery) {
   const cf = ctx.clients.get(CloudFrontClient);
   const items = await collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items);
   const tagsByArn = new Map<string, Record<string, string> | undefined>();
@@ -87,9 +91,11 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
     const aliases = d.Aliases?.Items ?? [];
     const defaultOrigin = origins.find((o) => o.Id === d.DefaultCacheBehavior?.TargetOriginId)?.DomainName ?? origins[0]?.DomainName ?? null;
     const deployed = d.Status === 'Deployed';
+    discovery.hosting.push({ resourceId: nid('cloudfront', d.Id), hosts: [...new Set([d.DomainName, ...aliases].filter((v): v is string => Boolean(v)).map((v) => v.toLowerCase()))], enabled: Boolean(d.Enabled), deployed });
     nodes.push({
       id: nid('cloudfront', d.Id),
       type: 'cloudfront',
+      requestRouting: cloudfrontRouting(d),
       category: 'network',
       name: aliases[0] ?? d.DomainName ?? d.Id,
       nativeId: d.Id,
@@ -116,7 +122,7 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
   }
 }
 
-async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges: ResourceEdge[]) {
+async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges: ResourceEdge[], discovery: FrontendDiscovery) {
   const apigw = ctx.clients.get(APIGatewayClient);
   const apis = await collect(paginateGetRestApis({ client: apigw }, { limit: 500 }), (p) => p.items);
   let integrationCalls = 0;
@@ -129,12 +135,19 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
         attempt(ctx, `apigw stages ${api.name}`, () => apigw.send(new GetStagesCommand({ restApiId: id }))),
         attempt(ctx, `apigw resources ${api.name}`, () => collect(paginateGetResources({ client: apigw }, { restApiId: id, embed: ['methods'], limit: 500 }), (p) => p.items)),
       ]);
+      const missing = (path: string, method: string, issue: 'lookup-failed' | 'lookup-limit') => {
+        discovery.cors.push({ targetId: apiNodeId, source: 'rest-integration-response', deployment: 'editable-config', path, method, responseType: method === 'OPTIONS' ? 'preflight' : 'actual-response', origins: [], issues: [issue] });
+      };
+      if (!resources) missing('*', '*', 'lookup-failed');
       const refs = new Set<string>();
       const lambdaRoutes = new Map<string, string[]>();
+      const requestRoutes: RequestRoute[] = [];
       const kinds: Record<string, number> = {};
       const pending: Array<{ path: string; method: string }> = [];
       const consume = (path: string, method: string, integration?: Integration) => {
         if (!integration) return;
+        discovery.cors.push(...restCors(apiNodeId, path, method, integration));
+        requestRoutes.push(restRequestRoute(path, method, integration));
         kinds[integration.type ?? '?'] = (kinds[integration.type ?? '?'] ?? 0) + 1;
         const fn = lambdaFromIntegrationUri(integration.uri);
         if (fn) (lambdaRoutes.get(fn) ?? lambdaRoutes.set(fn, []).get(fn)!).push(`${method} ${path}`);
@@ -145,17 +158,19 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
         for (const [method, m] of Object.entries(r.resourceMethods ?? {})) {
           if (m?.methodIntegration) consume(r.path ?? '/', method, m.methodIntegration);
           else if (r.id) pending.push({ path: r.path ?? '/', method });
+          else missing(r.path ?? '/', method, 'lookup-failed');
         }
       }
       // Methods whose integration was not embedded: fetch individually, capped account-wide.
       await Promise.all(
         pending.map(async ({ path, method }) => {
-          if (integrationCalls >= MAX_V1_INTEGRATION_CALLS) return;
+          if (integrationCalls >= MAX_V1_INTEGRATION_CALLS) { missing(path, method, 'lookup-limit'); return; }
           integrationCalls += 1;
           const resourceId = (resources ?? []).find((r) => (r.path ?? '/') === path)?.id;
           if (!resourceId) return;
           const res = await attempt(ctx, `apigw integration ${api.name} ${method} ${path}`, () => apigw.send(new GetIntegrationCommand({ restApiId: id, resourceId, httpMethod: method })));
           if (res) consume(path, method, res);
+          else missing(path, method, 'lookup-failed');
         }),
       );
       nodes.push({
@@ -179,6 +194,7 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
           설명: api.description || null,
           _apiKind: 'rest',
         },
+        requestRouting: { kind: 'api', protocol: 'rest', routes: requestRoutes, stages: (stages?.item ?? []).flatMap((s) => s.stageName ? [s.stageName] : []), complete: Boolean(resources && stages) && !discovery.cors.some((r) => r.targetId === apiNodeId && r.issues.some((i) => i === 'lookup-failed' || i === 'lookup-limit')), deployment: 'editable-config' },
         tags: tagsToRecord(api.tags),
         refs: [...refs],
       });
@@ -189,7 +205,7 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
   );
 }
 
-async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges: ResourceEdge[]) {
+async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges: ResourceEdge[], discovery: FrontendDiscovery) {
   const v2 = ctx.clients.get(ApiGatewayV2Client);
   const apis: Api[] = [];
   let token: string | undefined;
@@ -204,13 +220,23 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
       if (!api.ApiId) return;
       const id = api.ApiId;
       const apiNodeId = nid('api-gateway', id);
-      const [stages, integrations] = await Promise.all([
+      const [stages, integrations, routes] = await Promise.all([
         attempt(ctx, `apigw v2 stages ${api.Name}`, () => v2.send(new GetStagesV2Command({ ApiId: id, MaxResults: '100' }))),
         attempt(ctx, `apigw v2 integrations ${api.Name}`, async () => {
           const items: IntegrationV2[] = [];
           let next: string | undefined;
           do {
             const res = await v2.send(new GetIntegrationsCommand({ ApiId: id, MaxResults: '100', NextToken: next }));
+            items.push(...(res.Items ?? []));
+            next = res.NextToken;
+          } while (next);
+          return items;
+        }),
+        attempt(ctx, `apigw routes ${api.Name}`, async () => {
+          const items: Route[] = [];
+          let next: string | undefined;
+          do {
+            const res = await v2.send(new GetRoutesCommand({ ApiId: id, MaxResults: '100', NextToken: next }));
             items.push(...(res.Items ?? []));
             next = res.NextToken;
           } while (next);
@@ -230,6 +256,7 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
         for (const v of Object.values(i.RequestParameters ?? {})) if (v && (v.startsWith('arn:') || v.startsWith('https://'))) refs.add(v);
       }
       const kind = (api.ProtocolType ?? 'HTTP').toLowerCase();
+      if (kind === 'http') discovery.cors.push(httpCors(apiNodeId, api.CorsConfiguration));
       nodes.push({
         id: apiNodeId,
         type: 'api-gateway',
@@ -249,6 +276,17 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
           통합: countSummary(kinds),
           설명: api.Description || null,
           _apiKind: kind,
+        },
+        requestRouting: {
+          kind: 'api', protocol: kind === 'http' ? 'http' : 'websocket', deployment: 'unverified',
+          complete: Boolean(stages && integrations && routes && !stages.NextToken),
+          stages: (stages?.Items ?? []).flatMap((s) => s.StageName ? [s.StageName] : []),
+          routes: (routes ?? []).map((route) => {
+            const integration = integrations?.find((i) => `integrations/${i.IntegrationId}` === route.Target);
+            const key = route.RouteKey ?? '';
+            const space = key.indexOf(' ');
+            return { method: space < 0 ? 'ANY' : key.slice(0, space), path: space < 0 ? key : key.slice(space + 1), targetArn: integrationArn(integration?.IntegrationUri), integrationType: integration?.IntegrationType, async: Boolean(integration?.IntegrationSubtype) };
+          }),
         },
         tags: api.Tags && Object.keys(api.Tags).length ? api.Tags : undefined,
         refs: [...refs],
@@ -320,11 +358,17 @@ async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
 async function run(ctx: CollectorContext) {
   const nodes: ResourceNode[] = [];
   const edges: ResourceEdge[] = [];
-  const results = await Promise.allSettled([cloudfront(ctx, nodes), apiGatewayV1(ctx, nodes, edges), apiGatewayV2(ctx, nodes, edges), route53(ctx, nodes)]);
+  const frontendDiscovery: FrontendDiscovery = { hosting: [], cors: [], coverage: [] };
+  const results = await Promise.allSettled([cloudfront(ctx, nodes, frontendDiscovery), apiGatewayV1(ctx, nodes, edges, frontendDiscovery), apiGatewayV2(ctx, nodes, edges, frontendDiscovery), route53(ctx, nodes)]);
+  const services = ['cloudfront', 'rest-api', 'http-api'] as const;
+  services.forEach((service, index) => {
+    const incomplete = service === 'rest-api' && frontendDiscovery.cors.some((rule) => rule.issues.some((issue) => issue === 'lookup-failed' || issue === 'lookup-limit'));
+    frontendDiscovery.coverage.push({ service, state: results[index].status === 'rejected' ? 'unavailable' : incomplete ? 'partial' : 'complete' });
+  });
   const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${['cloudfront', 'apigw-v1', 'apigw-v2', 'route53'][i]}: ${errMsg(r.reason)}`] : []));
   if (failed.length === results.length) throw new Error(failed.join('; '));
   for (const f of failed) ctx.log(`[edge] ${f}`);
-  return { nodes, edges };
+  return { nodes, edges, frontendDiscovery };
 }
 
 export const edgeCollector: Collector = { name: 'edge', label: 'CloudFront·API Gateway·Route 53', run };

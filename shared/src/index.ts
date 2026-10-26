@@ -99,7 +99,39 @@ export interface MetricSeries {
   latest: number | null;
 }
 
+export interface RequestRoute {
+  method: string;
+  path: string;
+  /** Only an explicit Lambda integration ARN; never an inferred env reference. */
+  targetArn?: string;
+  async: boolean;
+  integrationType?: string;
+}
+
+export type RequestRouting = {
+  kind: 'cloudfront';
+  hosts: string[];
+  enabled: boolean;
+  deployed: boolean;
+  origins: Array<{ id: string; host: string; path: string }>;
+  /** Ordered cache behaviors, default last. Dynamic code is not evaluated. */
+  behaviors: Array<{ pattern: string; originId: string; methods: string[]; dynamic: boolean }>;
+} | {
+  kind: 'api';
+  protocol: 'rest' | 'http' | 'websocket';
+  routes: RequestRoute[];
+  stages: string[];
+  complete: boolean;
+  deployment: 'editable-config' | 'unverified';
+} | {
+  kind: 'appsync';
+  protocol: 'graphql' | 'events';
+  /** Data sources are context, not proof of a particular resolver's execution. */
+  dataSources: Array<{ name: string; type: string; refs: string[] }>;
+};
+
 export interface ResourceNode {
+  requestRouting?: RequestRouting;
   /** Stable id: ARN when available, else `${type}:${nativeId}` */
   id: string;
   type: ResourceType;
@@ -176,7 +208,47 @@ export interface CollectorReport {
   error?: string;
 }
 
+/** Configuration evidence only: never proof of a browser request or successful CORS. */
+export interface CorsRule {
+  targetId: string;
+  source: 'http-api-cors' | 'rest-integration-response';
+  deployment: 'unverified' | 'editable-config';
+  path?: string;
+  method?: string;
+  statusCode?: string;
+  responseType: 'api-policy' | 'preflight' | 'actual-response';
+  origins: string[];
+  methods?: string[];
+  headers?: string[];
+  credentials?: boolean;
+  issues: Array<'wildcard' | 'null-origin' | 'local-origin' | 'invalid-origin' | 'dynamic-response' | 'backend-managed' | 'not-configured' | 'lookup-failed' | 'lookup-limit'>;
+}
+
+export interface FrontendHosting {
+  resourceId: string;
+  hosts: string[];
+  enabled: boolean;
+  deployed: boolean;
+}
+
+export interface FrontendDiscovery {
+  hosting: FrontendHosting[];
+  cors: CorsRule[];
+  coverage: Array<{ service: 'cloudfront' | 'rest-api' | 'http-api'; state: 'complete' | 'partial' | 'unavailable' }>;
+}
+
+export interface FrontendRelations extends FrontendDiscovery {
+  schemaVersion: 1;
+  scope: { source: string; account: string; region: string };
+  collectedAt: string;
+  /** Origin retains scheme and effective port. Host matching alone does not prove hosting. */
+  relations: Array<{ id: string; origin: string; hostingResourceId: string; targetId: string; evidenceIndexes: number[]; kind: 'allowed_origin' }>;
+  unresolved: Array<{ evidenceIndex: number; origin: string; reason: 'hosting-not-collected' | 'hosting-unavailable' | 'no-matching-host' | 'hosting-disabled' | 'target-not-collected' }>;
+}
+
 export interface ResourceGraph {
+  /** Absent in legacy cache: evidence was not collected, not an empty relationship set. */
+  frontendRelations?: FrontendRelations;
   account: string;
   region: string;
   /** Credential source descriptor, e.g. profile:my-dev */
