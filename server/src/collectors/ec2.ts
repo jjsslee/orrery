@@ -14,10 +14,12 @@ import {
   type Volume,
 } from '@aws-sdk/client-ec2';
 import { AutoScalingClient, paginateDescribeAutoScalingGroups } from '@aws-sdk/client-auto-scaling';
-import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
+import type { CleanupDiscovery, ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { edge, iso, nameFromTags, nid, statusFromState, tagsToRecord } from './ids.ts';
 import { collect, errMsg, roleNameFromArn } from './util.ts';
+
+import { observeCleanup } from '../cleanup/observe.ts';
 
 interface VolumeSummary { count: number; gib: number; types: Set<string>; encrypted: number }
 
@@ -83,9 +85,10 @@ async function run(ctx: CollectorContext) {
   const ec2 = ctx.clients.get(EC2Client);
   const asgClient = ctx.clients.get(AutoScalingClient);
   const nodes: ResourceNode[] = [];
+  const cleanup: CleanupDiscovery = { facts: [], coverage: [] };
   const edges: ResourceEdge[] = [];
 
-  const reservations = await collect(paginateDescribeInstances({ client: ec2 }, {}), (p) => p.Reservations);
+  const reservations = await observeCleanup(cleanup, 'stopped-ec2', 'DescribeInstances', () => collect(paginateDescribeInstances({ client: ec2 }, {}), (p) => p.Reservations));
   const instances: Instance[] = reservations.flatMap((r) => r.Instances ?? []).filter((i) => i.State?.Name !== 'terminated');
 
   // Secondary signals are best-effort: a failure here must not hide the instances.
@@ -94,7 +97,7 @@ async function run(ctx: CollectorContext) {
       ctx.log(`[ec2] DescribeInstanceStatus 실패: ${errMsg(err)}`);
       return [];
     }),
-    collect(paginateDescribeVolumes({ client: ec2 }, {}), (p) => p.Volumes).catch((err) => {
+    observeCleanup(cleanup, 'detached-ebs', 'DescribeVolumes', () => collect(paginateDescribeVolumes({ client: ec2 }, {}), (p) => p.Volumes)).catch((err) => {
       ctx.log(`[ec2] DescribeVolumes 실패: ${errMsg(err)}`);
       return [];
     }),
@@ -107,6 +110,7 @@ async function run(ctx: CollectorContext) {
   const health = new Map<string, { instance?: string; system?: string }>();
   for (const s of statuses) if (s.InstanceId) health.set(s.InstanceId, { instance: s.InstanceStatus?.Status, system: s.SystemStatus?.Status });
 
+  for (const v of volumes) if (v.VolumeId) cleanup.facts.push({ resourceId: nid('ebs-volume', v.VolumeId), ruleId: 'detached-ebs', state: v.State, attachments: v.Attachments?.length ?? 0, sizeGiB: v.Size, multiAttach: v.MultiAttachEnabled });
   const { byInstance: volumesByInstance, detached } = splitVolumes(volumes);
   for (const v of detached) if (v.VolumeId) nodes.push(volumeNode(v.VolumeId, v, ctx.region, ctx.account));
 
@@ -114,6 +118,7 @@ async function run(ctx: CollectorContext) {
   for (const i of instances) {
     if (!i.InstanceId) continue;
     const id = i.InstanceId;
+    cleanup.facts.push({ resourceId: nid('ec2-instance', id), ruleId: 'stopped-ec2', state: i.State?.Name });
     if (i.VpcId) vpcByInstance.set(id, i.VpcId);
     const tags = tagsToRecord(i.Tags);
     const state = i.State?.Name ?? 'unknown';
@@ -207,7 +212,7 @@ async function run(ctx: CollectorContext) {
     }
   }
 
-  return { nodes, edges };
+  return { nodes, edges, cleanup };
 }
 
 export const ec2Collector: Collector = { name: 'ec2', label: 'EC2·오토스케일링·EBS', run };

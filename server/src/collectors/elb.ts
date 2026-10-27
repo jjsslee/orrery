@@ -14,10 +14,12 @@ import {
   paginateDescribeTargetGroups,
   type TargetHealthDescription,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
-import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
+import type { CleanupDiscovery, ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { arnName, edge, iso, nid, statusFromState, tagsToRecord } from './ids.ts';
 import { attempt, chunk, collect } from './util.ts';
+
+import { observeCleanup } from '../cleanup/observe.ts';
 
 interface HealthSummary { healthy: number; total: number }
 
@@ -48,11 +50,12 @@ function statusFromHealth(s: HealthSummary, fallback: Status): Status {
 async function run(ctx: CollectorContext) {
   const elb = ctx.clients.get(ElasticLoadBalancingV2Client);
   const nodes: ResourceNode[] = [];
+  const cleanup: CleanupDiscovery = { facts: [], coverage: [] };
   const edges: ResourceEdge[] = [];
 
   const [lbs, tgs] = await Promise.all([
     collect(paginateDescribeLoadBalancers({ client: elb }, {}), (p) => p.LoadBalancers),
-    collect(paginateDescribeTargetGroups({ client: elb }, {}), (p) => p.TargetGroups),
+    observeCleanup(cleanup, 'empty-target-group', 'DescribeTargetGroups', () => collect(paginateDescribeTargetGroups({ client: elb }, {}), (p) => p.TargetGroups)),
   ]);
 
   const listenerSummary = new Map<string, string[]>();
@@ -74,9 +77,12 @@ async function run(ctx: CollectorContext) {
     ...tgs.map(async (tg) => {
       if (!tg.TargetGroupArn) return;
       const res = await attempt(ctx, `elb target health ${tg.TargetGroupName}`, () =>
-        elb.send(new DescribeTargetHealthCommand({ TargetGroupArn: tg.TargetGroupArn })),
+        observeCleanup(cleanup, 'empty-target-group', 'DescribeTargetHealth', () => elb.send(new DescribeTargetHealthCommand({ TargetGroupArn: tg.TargetGroupArn })), nid('target-group', tg.TargetGroupArn!)),
       );
-      if (res) tgHealth.set(tg.TargetGroupArn, res.TargetHealthDescriptions ?? []);
+      if (res) {
+        tgHealth.set(tg.TargetGroupArn, res.TargetHealthDescriptions ?? []);
+        cleanup.facts.push({ resourceId: nid('target-group', tg.TargetGroupArn), ruleId: 'empty-target-group', registeredTargets: (res.TargetHealthDescriptions ?? []).length, loadBalancers: tg.LoadBalancerArns?.length ?? 0 });
+      }
     }),
   ]);
 
@@ -171,7 +177,7 @@ async function run(ctx: CollectorContext) {
     for (const sg of lb.SecurityGroups ?? []) edges.push(edge('attached', nid('load-balancer', arn), nid('security-group', sg)));
   }
 
-  return { nodes, edges };
+  return { nodes, edges, cleanup };
 }
 
 export const elbCollector: Collector = { name: 'elb', label: 'ELB·타깃 그룹', run };

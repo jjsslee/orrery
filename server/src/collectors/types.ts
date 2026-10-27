@@ -1,7 +1,8 @@
-import type { AlarmInfo, ResourceEdge, ResourceNode } from '@orrery/shared';
+import type { AlarmInfo, CleanupDiscovery, ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { ClientFactory } from '../aws/clients.ts';
 
 export interface CollectorOutput {
+  cleanup?: CleanupDiscovery;
   nodes: ResourceNode[];
   edges: ResourceEdge[];
   /** CloudWatch alarms; the assembler attaches them to nodes by dimension */

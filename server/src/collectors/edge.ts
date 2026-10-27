@@ -21,10 +21,12 @@ import {
   type ListResourceRecordSetsCommandOutput,
   type ResourceRecordSet,
 } from '@aws-sdk/client-route-53';
-import type { ResourceEdge, ResourceNode } from '@orrery/shared';
+import type { CleanupDiscovery, ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { edge, iso, nid, tagsToRecord } from './ids.ts';
 import { attempt, chunk, collect, countSummary, errMsg, hostOf, lambdaNameFromArn } from './util.ts';
+
+import { observeCleanup } from '../cleanup/observe.ts';
 
 const MAX_V1_INTEGRATION_CALLS = 200;
 const MAX_RECORDS_PER_ZONE = 2000;
@@ -70,9 +72,9 @@ export function summariseRecords(records: ResourceRecordSet[], region: string): 
   return { refs: [...refs], names, byType, count: records.length };
 }
 
-async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
+async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup: CleanupDiscovery) {
   const cf = ctx.clients.get(CloudFrontClient);
-  const items = await collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items);
+  const items = await observeCleanup(cleanup, 'disabled-cloudfront', 'ListDistributions', () => collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items));
   const tagsByArn = new Map<string, Record<string, string> | undefined>();
   await Promise.all(
     items.map(async (d) => {
@@ -83,6 +85,7 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[]) {
   );
   for (const d of items) {
     if (!d.Id) continue;
+    cleanup.facts.push({ resourceId: nid('cloudfront', d.Id), ruleId: 'disabled-cloudfront', enabled: d.Enabled });
     const origins = d.Origins?.Items ?? [];
     const aliases = d.Aliases?.Items ?? [];
     const defaultOrigin = origins.find((o) => o.Id === d.DefaultCacheBehavior?.TargetOriginId)?.DomainName ?? origins[0]?.DomainName ?? null;
@@ -318,13 +321,14 @@ async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
 }
 
 async function run(ctx: CollectorContext) {
+  const cleanup: CleanupDiscovery = { facts: [], coverage: [] };
   const nodes: ResourceNode[] = [];
   const edges: ResourceEdge[] = [];
-  const results = await Promise.allSettled([cloudfront(ctx, nodes), apiGatewayV1(ctx, nodes, edges), apiGatewayV2(ctx, nodes, edges), route53(ctx, nodes)]);
+  const results = await Promise.allSettled([cloudfront(ctx, nodes, cleanup), apiGatewayV1(ctx, nodes, edges), apiGatewayV2(ctx, nodes, edges), route53(ctx, nodes)]);
   const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${['cloudfront', 'apigw-v1', 'apigw-v2', 'route53'][i]}: ${errMsg(r.reason)}`] : []));
   if (failed.length === results.length) throw new Error(failed.join('; '));
   for (const f of failed) ctx.log(`[edge] ${f}`);
-  return { nodes, edges };
+  return { nodes, edges, cleanup };
 }
 
 export const edgeCollector: Collector = { name: 'edge', label: 'CloudFront·API Gateway·Route 53', run };

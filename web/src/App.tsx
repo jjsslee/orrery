@@ -1,3 +1,4 @@
+import './styles/cleanup.css';
 import { useEffect } from 'react';
 import { LIVE_GRAPH_MS, LIVE_STATUS_MS } from './model/live';
 import { useStore } from './model/store';
@@ -9,6 +10,7 @@ import { LoadOverlay } from './canvas/LoadOverlay';
 import { RegionPrompt } from './canvas/RegionPrompt';
 import { SetupGuide } from './canvas/SetupGuide';
 import { Monitoring } from './views/Monitoring';
+import { Cleanup } from './views/Cleanup';
 import { TypeView } from './views/TypeView';
 
 export default function App() {
@@ -27,7 +29,7 @@ export default function App() {
   // only while the tab is visible. CloudWatch metrics (metered) are never refreshed here.
   const live = useStore((s) => s.live);
   useEffect(() => {
-    if (!live || view === 'monitoring') return;
+    if (!live || view === 'monitoring' || view === 'cleanup') return;
     let statusTimer: ReturnType<typeof setInterval> | undefined;
     let graphTimer: ReturnType<typeof setInterval> | undefined;
     const start = () => {
@@ -62,18 +64,18 @@ export default function App() {
   }, [select]);
 
   return (
-    <div className={`app ${view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''}`}>
+    <div className={`app ${view === 'cleanup' ? 'cleanup-app' : view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''}`}>
       <TopBar />
-      {view !== 'monitoring' && <Rail />}
-      <main className="stage" aria-label={view === 'monitoring' ? '모니터링' : view === 'topology' ? '토폴로지' : '유형별 보기'}>
+      {view !== 'monitoring' && view !== 'cleanup' && <Rail />}
+      <main className="stage" aria-label={view === 'cleanup' ? '정리 후보' : view === 'monitoring' ? '모니터링' : view === 'topology' ? '토폴로지' : '유형별 보기'}>
         {view === 'monitoring' ? <Monitoring /> : <>
-        {view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
+        {view === 'cleanup' ? <Cleanup /> : view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
         <LoadOverlay />
         {setup === 'needed' && <SetupGuide />}
         {setup === 'done' && !graph && idle && (region ? <div className="empty">프로필을 선택하면 수집을 시작합니다.</div> : <RegionPrompt />)}
         </>}
       </main>
-      {view !== 'monitoring' && selectedId && <Inspector />}
+      {view !== 'monitoring' && view !== 'cleanup' && selectedId && <Inspector />}
     </div>
   );
 }

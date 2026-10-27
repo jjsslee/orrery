@@ -1,4 +1,4 @@
-import type { CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, AlarmHistorySnapshot, MonitoringMetricsSnapshot, MonitoringRelatedSnapshot, MonitoringResourceResolution } from '@orrery/shared';
+import type { CleanupHistory, CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, AlarmHistorySnapshot, MonitoringMetricsSnapshot, MonitoringRelatedSnapshot, MonitoringResourceResolution } from '@orrery/shared';
 
 const q = (params: Record<string, string | undefined>) =>
   new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]))).toString();
@@ -14,6 +14,7 @@ async function json<T>(url: string, signal?: AbortSignal, body?: unknown): Promi
 }
 
 export const api = {
+  cleanupHistory: (profile: string, region: string, findingId: string, collectedAt: string, signal?: AbortSignal) => json<CleanupHistory>(`/api/cleanup/history?${q({ profile, region })}`, signal, { findingId, collectedAt }),
   profiles: () => json<{ profiles: ProfileInfo[]; defaultProfile: string; env: boolean }>('/api/profiles'),
   regions: (profile: string, signal?: AbortSignal) => json<{ regions: string[] }>(`/api/regions?${q({ profile })}`, signal),
   identity: (profile: string, region: string, signal?: AbortSignal, reconnect = false) => json<{ account: string; arn: string; region: string; source: string }>(`/api/identity?${q({ profile, region, reconnect: reconnect ? '1' : undefined })}`, signal),

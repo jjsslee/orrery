@@ -176,7 +176,42 @@ export interface CollectorReport {
   error?: string;
 }
 
+/** Facts are collected from AWS responses, never inferred from graph edges or UI labels. */
+export type CleanupRule = 'detached-ebs' | 'empty-target-group' | 'stopped-ec2' | 'disabled-cloudfront';
+export type CleanupFact = { resourceId: string } & (
+  | { ruleId: 'detached-ebs'; state?: string; attachments: number; sizeGiB?: number; multiAttach?: boolean }
+  | { ruleId: 'empty-target-group'; registeredTargets: number; loadBalancers: number }
+  | { ruleId: 'stopped-ec2'; state?: string }
+  | { ruleId: 'disabled-cloudfront'; enabled?: boolean }
+);
+export interface CleanupCoverage {
+  ruleId: CleanupRule;
+  api: string;
+  resourceId?: string;
+  state: 'complete' | 'error' | 'not-collected';
+  attemptedAt: string;
+  succeededAt?: string;
+  errorCode?: string;
+}
+export interface CleanupDiscovery { facts: CleanupFact[]; coverage: CleanupCoverage[] }
+export interface CleanupFinding {
+  id: string;
+  resourceId: string;
+  ruleId: CleanupRule;
+  reviewClass: 'connections' | 'inactive';
+  fact: CleanupFact;
+  observedAt: string;
+}
+export interface CleanupSnapshot {
+  schemaVersion: 1;
+  scope: { source: string; account: string; region: string };
+  observedAt: string;
+  findings: CleanupFinding[];
+  coverage: CleanupCoverage[];
+}
+
 export interface ResourceGraph {
+  cleanup?: CleanupSnapshot;
   account: string;
   region: string;
   /** Credential source descriptor, e.g. profile:my-dev */
@@ -366,4 +401,27 @@ export interface MonitoringResourceResolution {
   resources: MonitoringResource[];
   unresolvedKeys: string[];
   graph: MonitoringGraphState;
+}
+
+export interface CleanupHistoryEvent {
+  id: string;
+  time: string;
+  name: string;
+  effect: 'idle' | 'active' | 'change';
+}
+export interface CleanupHistory {
+  scope: CleanupSnapshot['scope'];
+  findingId: string;
+  graphCollectedAt: string;
+  analyzedAt: string;
+  start: string;
+  end: string;
+  lookbackStart: string;
+  region: string;
+  coverage: 'complete' | 'partial' | 'error';
+  pages: number;
+  events: CleanupHistoryEvent[];
+  duration: { since?: string; seconds?: number; basis: 'event' | 'unknown' };
+  verdict: 'review' | 'recent' | 'insufficient';
+  messages: string[];
 }

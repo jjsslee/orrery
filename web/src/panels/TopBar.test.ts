@@ -4,8 +4,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TopBar } from './TopBar';
 
-test('navigation exposes topology, types and monitoring', () => {
+test('navigation exposes topology, types, monitoring and cleanup', () => {
   const html = renderToStaticMarkup(createElement(TopBar));
   const tabs = [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]);
-  assert.deepEqual(tabs, ['토폴로지', '유형별', '모니터링']);
+  assert.deepEqual(tabs, ['토폴로지', '유형별', '모니터링', '정리 후보']);
 });
