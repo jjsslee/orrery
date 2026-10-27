@@ -84,6 +84,7 @@ export function CleanupWorkspace({graph,generation}:{graph:ResourceGraph;generat
      <div className="cleanup-duration"><Clock3 size={18}/><div><strong>{durationLabel(history)}</strong><span>{history?.duration.since?`상태 변경 요청 기록 후 경과 (추정) · ${date(history.duration.since)}`:'현재 상태가 시작된 시점을 아직 확인하지 못했습니다.'}</span></div></div>
      {finding.fact.ruleId==='detached-ebs'&&finding.fact.sizeGiB!==undefined&&<p className="cleanup-resource-note">보관 용량 {finding.fact.sizeGiB} GiB</p>}
      {finding.fact.ruleId==='empty-target-group'&&<p className="cleanup-resource-note">등록 대상 0개 · 로드 밸런서 연결 {finding.fact.loadBalancers}개</p>}
+     <section className="cleanup-tags" aria-label="자원 태그"><h3>태그</h3>{Object.keys(node.tags??{}).length?<dl>{Object.entries(node.tags??{}).sort(([a],[b])=>a.localeCompare(b)).map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value||'—'}</dd></div>)}</dl>:<p>수집된 태그 정보가 없습니다. 태그가 없거나 조회하지 못한 경우입니다.</p>}</section>
      <section className="cleanup-history"><h3>최근 30일 관리 이력</h3>{history?<>
       <p>{history.coverage==='error'?'CloudTrail 조회 실패 · 권한과 연결을 확인하세요.':history.coverage==='partial'?'일부 이력만 확인됨 · 기간 전체 판정 불가':`${history.events.filter(e=>e.time>=history.start).length}개 변경 기록 · 조회된 범위 기준`}</p>
       <ul>{history.events.filter(e=>e.time>=history.start).slice(0,3).map(event=><li key={event.id}><span>{event.name}</span><time>{date(event.time)}</time></li>)}</ul>

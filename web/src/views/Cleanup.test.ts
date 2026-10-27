@@ -14,3 +14,9 @@ test('legacy snapshots and query failures remain distinct from zero eligible res
  const legacy=renderToStaticMarkup(createElement(CleanupWorkspace,{graph:{...graph,cleanup:undefined},generation:0}));assert.match(legacy,/점검 근거가 없거나/);
  const partial=renderToStaticMarkup(createElement(CleanupWorkspace,{graph:{...graph,cleanup:{...graph.cleanup!,findings:[],coverage:[{ruleId:'detached-ebs',state:'error',api:'DescribeVolumes',attemptedAt:graph.collectedAt}]}},generation:0}));assert.match(partial,/점검 불가/);assert.match(partial,/목록 전체/);
 });
+test('selected resource exposes collected tags without inferring an owner or creator',()=>{
+ const tagged={...graph,nodes:[{...graph.nodes[0],tags:{Owner:'example-team',Name:'archive <test>','aws:cloudformation:stack-name':'example-stack'}}]};
+ const html=renderToStaticMarkup(createElement(CleanupWorkspace,{graph:tagged,generation:0}));
+ assert.match(html,/태그/);assert.match(html,/example-team/);assert.match(html,/archive &lt;test&gt;/);assert.match(html,/aws:cloudformation:stack-name/);
+ const unknown=renderToStaticMarkup(createElement(CleanupWorkspace,{graph,generation:0}));assert.match(unknown,/수집된 태그 정보가 없습니다/);
+});

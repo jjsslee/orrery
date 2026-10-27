@@ -121,7 +121,7 @@ scripts/  package.mjs: Windows·macOS 데스크톱 앱 빌드
 
 ## 정리 후보
 
-현재 구성에서 미연결 EBS, 빈 Target Group, 중지 EC2, 비활성 CloudFront를 모아 왼쪽 목록과 오른쪽 상세로 표시합니다. 현재 상태만으로 정리 후보를 확정하지 않습니다. 사용자가 **30일 이력 분석**을 실행하면 CloudTrail 관리 이벤트를 최대 90일까지 탐색하고 최근 30일 기록과 현재 상태를 함께 판단합니다. 추가 권한은 `cloudtrail:LookupEvents`입니다. 애플리케이션 로그나 CloudWatch 사용량 지표는 조회하지 않습니다.
+현재 구성에서 미연결 EBS, 빈 Target Group, 중지 EC2, 비활성 CloudFront를 모아 왼쪽 목록과 오른쪽 상세로 표시합니다. 상세에는 수집된 태그의 키·값을 함께 보여줍니다. 태그 정보가 없으면 태그 없음과 조회 실패를 단정하지 않으며, Owner 등의 태그를 생성자로 해석하지 않습니다. 현재 상태만으로 정리 후보를 확정하지 않습니다. 사용자가 **30일 이력 분석**을 실행하면 CloudTrail 관리 이벤트를 최대 90일까지 탐색하고 최근 30일 기록과 현재 상태를 함께 판단합니다. 추가 권한은 `cloudtrail:LookupEvents`입니다. 애플리케이션 로그나 CloudWatch 사용량 지표는 조회하지 않습니다.
 
 기간은 상태 변경 요청 기록 이후의 **추정 경과 시간**이며 실제 연속 유지 기간을 보장하지 않습니다. 이력 누락·조회 실패·시점 불명은 근거 부족으로 표시합니다. 특히 Target Group 등록 해제 기록만으로 전체가 비게 된 시점을 확정하지 않습니다. 삭제·대상 제외 기능은 없습니다.
 
@@ -171,6 +171,8 @@ scripts/  package.mjs: Windows·macOS 데스크톱 앱 빌드
 npm run typecheck   # shared / server / web
 npm test            # server + web: 읽기 전용 가드, 로컬 요청, 경보/지표 오류, 캐시, 요청 경합, 차트 회귀
 ```
+
+2026-10-27 v0.6.1 검증: 태그 표시 회귀를 포함해 서버 90개 + 웹 64개(총 154개), 전체 typecheck/build와 diff 검사 통과. 세 플랫폼 ZIP 무결성·버전, macOS ad-hoc 서명, Windows PE 형식을 확인했습니다. ARM 내장 서버 health(`0.6.1+20261027T013844Z`) 및 태그 UI 자산을 확인했습니다. Windows/Intel Mac 실제 실행·Apple 공증·실계정 조회는 미검증입니다.
 
 2026-10-27 v0.6.0 검증: 서버 90개 + 웹 63개(총 153개), 전체 typecheck/build와 diff 검사 통과. macOS ARM/Intel·Windows x64 ZIP 무결성·버전, macOS ad-hoc 서명, Windows PE 형식을 확인했습니다. ARM 내장 서버 health(`0.6.0+20261027T005622Z`)와 정리 후보 웹 자산을 확인했습니다. 실계정 CloudTrail 대조, Windows/Intel Mac 실제 실행과 Apple 공증은 미검증입니다.
 
