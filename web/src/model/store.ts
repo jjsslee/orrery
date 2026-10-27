@@ -269,7 +269,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (silent) { set({ liveBusy: false, statusError: `구성 조회 실패 · 이전 구성을 표시합니다: ${(err as Error).message}` }); return; }
       // A saved-but-broken profile (401) that the user did not pick this session: fall back to the server default.
       const { defaultProfile, profileChosen } = get();
-      if ((err as { status?: number }).status === 401 && !profileChosen && defaultProfile && defaultProfile !== profile) {
+      if ((err as { status?: number }).status === 401 && get().profiles.find((p) => p.name === profile)?.method !== 'sso' && !profileChosen && defaultProfile && defaultProfile !== profile) {
         console.info(`[orrery] profile '${profile}' failed to authenticate; switching to '${defaultProfile}'`);
         const fallback = get().setProfile(defaultProfile);
         const fallbackGeneration = scopeGeneration;

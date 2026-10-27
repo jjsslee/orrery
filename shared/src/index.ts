@@ -433,3 +433,11 @@ export interface CleanupHistory {
   verdict: 'review' | 'recent' | 'insufficient';
   messages: string[];
 }
+
+/** Only progress metadata is exposed; SSO tokens stay in the AWS CLI cache. */
+export interface SsoLoginStatus {
+  id: string;
+  profile: string;
+  state: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+  message?: string;
+}

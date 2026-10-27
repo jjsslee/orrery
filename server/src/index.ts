@@ -1,3 +1,4 @@
+import { registerSsoLoginRoutes } from './aws/sso-login.ts';
 import { registerCleanupRoutes } from './cleanup/routes.ts';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
@@ -73,6 +74,7 @@ app.addHook('onRequest', async (req, reply) => {
     return reply.status(403).send({ error: reason });
   }
 });
+registerSsoLoginRoutes(app);
 const cache = new Cache(packaged ? join(userDataDir(), 'cache') : join(here, '..', '..', '.orrery-cache'));
 
 interface Session {

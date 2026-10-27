@@ -1,3 +1,4 @@
+import { SsoLogin } from './SsoLogin';
 import { Activity, Eye, Moon, Radio, RotateCw, Sun } from 'lucide-react';
 import { useStore } from '../model/store';
 import { Dropdown } from '../components/Dropdown';
@@ -64,6 +65,7 @@ export function TopBar() {
             {identity ? <span className="mono identity-account">{maskAccount(identity.account)}</span> : <span className="muted identity-account">계정 확인 중</span>}
             <button type="button" className="link-btn" onClick={() => void reconnect()} disabled={!profile || loading.active} title="AWS 자격증명과 계정을 다시 확인하고 캐시를 분리합니다">다시 연결</button>
           </div>
+          <SsoLogin />
         </div>
         {view !== 'monitoring' && view !== 'cleanup' && <>
         <span className="topbar-sep" aria-hidden />

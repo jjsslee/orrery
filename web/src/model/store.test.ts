@@ -108,3 +108,19 @@ test('late successful graph after profile switch cannot restore the previous acc
     assert.equal(useStore.getState().graph?.account, 'account-B');
   } finally { Object.assign(api, original); }
 });
+
+test('an expired saved SSO profile stays selected for login instead of falling back to another account', async () => {
+  reset();
+  const original = api.streamGraph;
+  const previous = useStore.getState();
+  useStore.setState({ profile: 'sso-dev', profiles: [{ name: 'sso-dev', method: 'sso', isDefault: false }], defaultProfile: 'other-account', profileChosen: false });
+  api.streamGraph = async () => { throw Object.assign(new Error('SSO login required'), { status: 401 }); };
+  try {
+    await useStore.getState().load();
+    assert.equal(useStore.getState().profile, 'sso-dev');
+    assert.equal(useStore.getState().loading.error, 'SSO login required');
+  } finally {
+    api.streamGraph = original;
+    useStore.setState({ profiles: previous.profiles, defaultProfile: previous.defaultProfile, profileChosen: previous.profileChosen });
+  }
+});
