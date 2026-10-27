@@ -15,14 +15,14 @@ test('graph cache separates legacy data and each credential/account/region scope
   const dir = await mkdtemp(join(tmpdir(), 'orrery-graph-cache-'));
   try {
     const cache = new Cache(dir);
-    await cache.set(scopeKey('graph-v4', 'profile:a', '000000000000', 'r1'), { legacy: true });
-    assert.equal(await cache.get(scopeKey('graph-v6', 'profile:a', '000000000000', 'r1'), 10000), undefined);
+    await cache.set(scopeKey('graph-v6', 'profile:a', '000000000000', 'r1'), { legacy: true });
+    assert.equal(await cache.get(scopeKey('graph-v7', 'profile:a', '000000000000', 'r1'), 10000), undefined);
     const scopes = [
       ['profile:a', '000000000000', 'r1'], ['profile:b', '000000000000', 'r1'],
       ['profile:a', '111111111111', 'r1'], ['profile:a', '000000000000', 'r2'],
     ];
-    for (const [source, account, region] of scopes) await cache.set(scopeKey('graph-v6', source, account, region), { source, account, region });
+    for (const [source, account, region] of scopes) await cache.set(scopeKey('graph-v7', source, account, region), { source, account, region });
     const reopened = new Cache(dir);
-    for (const [source, account, region] of scopes) assert.deepEqual(await reopened.get(scopeKey('graph-v6', source, account, region), 10000), { source, account, region });
+    for (const [source, account, region] of scopes) assert.deepEqual(await reopened.get(scopeKey('graph-v7', source, account, region), 10000), { source, account, region });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

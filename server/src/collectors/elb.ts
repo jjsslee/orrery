@@ -72,6 +72,11 @@ async function run(ctx: CollectorContext) {
       const listeners = await attempt(ctx, `elb listeners ${lb.LoadBalancerName}`, () =>
         collect(paginateDescribeListeners({ client: elb }, { LoadBalancerArn: lb.LoadBalancerArn }), (p) => p.Listeners),
       );
+      for (const listener of listeners ?? []) {
+        for (const certificate of listener.Certificates ?? []) {
+          if (certificate.CertificateArn) edges.push(edge('attached', nid('load-balancer', lb.LoadBalancerArn), nid('acm-certificate', certificate.CertificateArn)));
+        }
+      }
       if (listeners) listenerSummary.set(lb.LoadBalancerArn, listeners.map((l) => `${l.Protocol ?? '?'}:${l.Port ?? '?'}`));
     }),
     ...tgs.map(async (tg) => {

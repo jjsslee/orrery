@@ -114,7 +114,7 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup:
         설명: d.Comment || null,
       },
       tags: d.ARN ? tagsByArn.get(d.ARN) : undefined,
-      refs: origins.map((o) => o.DomainName).filter((o): o is string => Boolean(o)),
+      refs: [...origins.map((o) => o.DomainName), d.WebACLId, d.ViewerCertificate?.ACMCertificateArn].filter((o): o is string => Boolean(o)),
     });
   }
 }

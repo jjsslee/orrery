@@ -64,7 +64,14 @@ export type ResourceType =
   | 'sns-topic'
   | 'eventbridge-rule'
   | 'step-function'
-  | 'codebuild-project';
+  | 'codebuild-project'
+  | 'scheduler'
+  | 'opensearch-collection'
+  | 'transit-gateway'
+  | 'cloudmap-namespace'
+  | 'cloudmap-service'
+  | 'waf-acl'
+  | 'acm-certificate';
 
 export type Status = 'healthy' | 'warning' | 'critical' | 'inactive' | 'unknown';
 

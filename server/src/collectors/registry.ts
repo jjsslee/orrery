@@ -21,10 +21,20 @@ import { rdsCollector } from './rds.ts';
 import { s3Collector } from './s3.ts';
 import { securityCollector } from './security.ts';
 
+import { certificatesCollector } from './certificates.ts';
+import { discoveryCollector } from './discovery.ts';
+import { opensearchCollector } from './opensearch.ts';
+import { schedulerCollector } from './scheduler.ts';
+import { transitCollector } from './transit.ts';
+import { wafCollector } from './waf.ts';
+
 export const extraCollectors: Collector[] = [
   alarmsCollector,
   appsyncCollector,
+  certificatesCollector(),
+  certificatesCollector('us-east-1'),
   codebuildCollector,
+  discoveryCollector,
   dynamodbCollector,
   ec2Collector,
   ecrCollector,
@@ -36,7 +46,12 @@ export const extraCollectors: Collector[] = [
   elbCollector,
   lambdaCollector,
   messagingCollector,
+  opensearchCollector,
   rdsCollector,
   s3Collector,
+  schedulerCollector,
   securityCollector,
+  transitCollector,
+  wafCollector('REGIONAL'),
+  wafCollector('CLOUDFRONT'),
 ];

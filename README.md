@@ -27,7 +27,7 @@ npm run dev
 | `ORRERY_DEFAULT_PROFILE` | – | 처음 열 때 선택할 프로필 (없으면 `AWS_PROFILE`, 그다음 `default`) |
 | `AWS_PROFILE` | – | `?profile=` 생략 시 사용할 프로필 |
 
-수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 인증 소스·실제 계정·리전별로 분리하며 파일 이름에는 키의 SHA-256 해시를 사용합니다. 현재 그래프 캐시 형식은 `graph-v6`이며 이전 형식은 재사용하지 않고 다시 수집합니다. 상단바의 **다시 수집**은 구성 캐시를 무시합니다. 상태·경보 갱신은 구성 캐시의 10분 만료 시간을 연장하지 않습니다. 세션 안에서는 STS 계정 확인과 실제 SDK 호출에 같은 자격증명 스냅샷을 사용합니다. 최대 5분 또는 임시 자격증명 만료 1분 전 중 먼저 도달한 시점에 STS로 다시 확인합니다. 키/SSO 설정을 갱신했거나 같은 프로필의 계정이 달라졌으면 **다시 연결**로 세션·계정을 즉시 다시 확인할 수 있습니다. 연결 실패 중에는 이전 계정의 화면 데이터를 비웁니다.
+수집 결과는 `.orrery-cache/`에 JSON으로 저장되어 개발 서버 재시작 후에도 재사용됩니다. 인증 소스·실제 계정·리전별로 분리하며 파일 이름에는 키의 SHA-256 해시를 사용합니다. 현재 그래프 캐시 형식은 `graph-v7`이며 이전 형식은 재사용하지 않고 다시 수집합니다. 상단바의 **다시 수집**은 구성 캐시를 무시합니다. 상태·경보 갱신은 구성 캐시의 10분 만료 시간을 연장하지 않습니다. 세션 안에서는 STS 계정 확인과 실제 SDK 호출에 같은 자격증명 스냅샷을 사용합니다. 최대 5분 또는 임시 자격증명 만료 1분 전 중 먼저 도달한 시점에 STS로 다시 확인합니다. 키/SSO 설정을 갱신했거나 같은 프로필의 계정이 달라졌으면 **다시 연결**로 세션·계정을 즉시 다시 확인할 수 있습니다. 연결 실패 중에는 이전 계정의 화면 데이터를 비웁니다.
 
 ## 데스크톱 앱 (Windows·macOS)
 
@@ -105,6 +105,19 @@ scripts/  package.mjs: Windows·macOS 데스크톱 앱 빌드
 ### 색과 글자 규칙
 
 토큰은 `web/src/styles/tokens.css`에 있습니다. 색은 하는 일 하나씩만 맡습니다: 분류색(`--cat-*`)은 자원 유형, 상태색(`--status-*`)은 상태, 금색 펄스(`--pulse`)는 트래픽·활성 태그 필터, 선택·포커스는 중립 잉크(`--select-*`, `--focus`)입니다. 분류색을 UI 강조색으로 쓰지 않으므로 같은 유형은 지도·표·모니터링에서 같은 색 아이콘입니다. 글자는 `--fs-*` 단계를 쓰고 11.5px 아래로 내리지 않으며, 읽는 글자색 `--ink-3`은 다크 패널에서 5:1 이상, 라이트 상태색은 4.3:1 이상을 유지합니다. `--ink-4`는 비활성·구분선 전용입니다.
+
+### 추가 서비스 수집 범위
+
+- EventBridge Scheduler: 모든 schedule group의 일정을 수집하며 실행 대상·실행 역할·DLQ·KMS 참조를 연결합니다. 실행 입력(`Target.Input`)은 저장하거나 표시하지 않습니다. 범용 AWS SDK 대상의 입력 안에 있는 자원은 해석하지 않습니다.
+- OpenSearch Serverless: 컬렉션 유형·상태·엔드포인트·태그·KMS 참조를 수집합니다. 네트워크/데이터 접근 정책과 인덱스는 수집하지 않습니다.
+- Transit Gateway: 게이트웨이와 `available` 상태의 VPC attachment를 연결합니다. 라우트 테이블 전파·경로 또는 다른 계정의 VPC를 추론하지 않습니다.
+- Cloud Map: namespace·service를 별도 노드로 표시하고 namespace–service, Route 53 hosted zone, ECS service registry/Service Connect의 ARN 참조를 연결합니다. 등록 인스턴스의 개별 상태는 조회하지 않습니다.
+- WAF: 선택 리전의 Web ACL과 CloudFront용 글로벌 Web ACL을 별도로 수집합니다. ALB·REST API stage·AppSync의 연결 및 CloudFront의 Web ACL 참조를 연결합니다. 규칙 본문은 저장하지 않습니다.
+- ACM: 선택 리전과 CloudFront 인증서 리전(`us-east-1`, 중복 조회 제외)의 인증서를 수집합니다. 만료/폐기/실패는 위험, 만료 30일 이내는 주의로 표시합니다. CloudFront와 ELB listener의 기본 인증서 연결을 표시하며 추가 SNI 인증서는 조회하지 않습니다.
+
+WAF 글로벌 조회는 `us-east-1`을 사용합니다. 다른 파티션의 글로벌 서비스 리전은 지원하지 않습니다. 새 유형은 지도·검색·상세 및 관련 자원에서 사용할 수 있지만 CloudWatch 지표는 아직 지원하지 않습니다. Cloud Map·WAF는 구성 조회 성공만으로 건강 상태를 단정하지 않습니다. 상세 조회가 실패한 자원은 목록에서 확인한 정보를 유지하고 `상세 미수집`으로 표시합니다. 태그·관계 조회 오류는 서버 로그에 남기며 확인하지 못한 연결은 추가하지 않습니다.
+
+추가 권한은 `scheduler:ListSchedules/GetSchedule`, `aoss:ListCollections/BatchGetCollection/ListTagsForResource`, `ec2:DescribeTransitGateways/DescribeTransitGatewayAttachments`, `servicediscovery:ListNamespaces/GetNamespace/ListServices/GetService/ListTagsForResource`, `wafv2:ListWebACLs/GetWebACL/ListTagsForResource/ListResourcesForWebACL`, `acm:ListCertificates/DescribeCertificate/ListTagsForCertificate`입니다. 모두 기존 읽기 전용 SDK guard를 통과하며 비밀 값·로그 본문·인증서 개인 키는 조회하지 않습니다.
 
 ## 토폴로지 읽는 법
 

@@ -110,6 +110,7 @@ function buildIndex(nodes: Map<string, ResourceNode>): RefIndex {
 }
 
 function kindFor(source: ResourceNode, target: ResourceNode): EdgeKind {
+  if (['waf-acl', 'acm-certificate', 'cloudmap-service', 'cloudmap-namespace'].includes(target.type)) return 'attached';
   if (source.type === 'cloudfront') return 'origin';
   if (source.type === 'route53-zone') return 'resolves';
   if (target.type === 'kms-key') return 'encrypts';

@@ -138,6 +138,9 @@ async function run(ctx: CollectorContext) {
     const td = s.taskDefinition ? taskDefs.get(s.taskDefinition) : undefined;
     const containers = td?.containerDefinitions ?? [];
     const refs = [
+      ...(s.serviceRegistries ?? []).map((r) => r.registryArn),
+      primary?.serviceConnectConfiguration?.namespace,
+      ...(primary?.serviceConnectResources ?? []).map((r) => r.discoveryArn),
       ...containers.map((c) => c.image),
       ...containers.flatMap((c) => (c.environment ?? []).map((e) => e.value)),
       ...containers.flatMap((c) => (c.secrets ?? []).map((e) => e.valueFrom)),

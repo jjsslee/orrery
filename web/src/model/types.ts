@@ -20,6 +20,13 @@ export interface TypeMeta {
 }
 
 export const TYPE_META: Record<ResourceType, TypeMeta> = {
+  scheduler: { label: 'EventBridge Scheduler', short: 'Scheduler', category: 'integration', icon: CalendarClock, keyProp: '일정' },
+  'opensearch-collection': { label: 'OpenSearch Serverless', short: 'OpenSearch', category: 'database', icon: Database, keyProp: '유형' },
+  'transit-gateway': { label: 'Transit Gateway', short: 'TGW', category: 'network', icon: Network, keyProp: '연결 수' },
+  'cloudmap-namespace': { label: 'Cloud Map namespace', short: 'Namespace', category: 'network', icon: FolderTree, keyProp: '유형' },
+  'cloudmap-service': { label: 'Cloud Map service', short: 'Cloud Map', category: 'network', icon: Signpost, keyProp: '등록 인스턴스' },
+  'waf-acl': { label: 'WAF Web ACL', short: 'WAF', category: 'security', icon: Shield, keyProp: '규칙 수' },
+  'acm-certificate': { label: 'ACM 인증서', short: 'ACM', category: 'security', icon: FileKey, keyProp: '만료' },
   region: { label: '리전', short: '리전', category: 'network', icon: MapIcon, plate: true },
   vpc: { label: 'VPC', short: 'VPC', category: 'network', icon: Network, plate: true, keyProp: 'CIDR' },
   subnet: { label: '서브넷', short: '서브넷', category: 'network', icon: Grid2x2, plate: true, keyProp: 'CIDR' },
