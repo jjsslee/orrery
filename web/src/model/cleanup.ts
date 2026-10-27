@@ -28,3 +28,9 @@ export function cleanupConsoleUrl(node:ResourceNode):string|undefined{
  if(node.type==='target-group')return `${root}#TargetGroup:targetGroupArn=${id}`;
  return undefined;
 }
+
+/** Summaries describe only the queried management-event window, never lifetime usage. */
+export function latestHistory(history:CleanupHistory){
+ const events=[...history.events].sort((a,b)=>Date.parse(b.time)-Date.parse(a.time));
+ return {events,management:events[0],activity:events.find(e=>e.effect==='active'),state:history.duration.basis==='event'?events.find(e=>e.effect==='idle'&&e.time===history.duration.since):undefined};
+}

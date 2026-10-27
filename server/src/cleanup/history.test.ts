@@ -52,3 +52,12 @@ test('lookup refuses to report complete coverage on denial and malformed records
  assert.equal(result.coverage,denied?'error':'partial');assert.equal(result.verdict,'insufficient');assert.ok(!JSON.stringify(result).includes('secret-error'));
  }
 });
+
+test('tag changes remain visible with a safe actor without resetting idle duration',()=>{
+ const tag=event(2,'CreateTags');tag.CloudTrailEvent=JSON.stringify({userIdentity:{type:'AssumedRole',arn:'arn:aws:sts::000000000000:assumed-role/example-deploy/session',accessKeyId:'do-not-retain'},sourceIPAddress:'do-not-retain'});
+ const parsed=parseHistoryEvent(tag,node,finding).event!;
+ assert.equal(parsed.effect,'metadata');assert.equal(parsed.actor?.type,'AssumedRole');assert.match(parsed.actor?.label??'',/example-deploy/);assert.ok(!JSON.stringify(parsed).includes('do-not-retain'));
+ const stop=parseHistoryEvent(event(45),node,finding).event!;
+ const r=summarizeHistory({...base(),events:[stop,parsed]},finding);
+ assert.equal(r.events[0].name,'CreateTags');assert.equal(r.duration.seconds,45*86400);assert.equal(r.verdict,'review');
+});

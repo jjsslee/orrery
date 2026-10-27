@@ -2,8 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import type {ResourceGraph} from '@orrery/shared';
-import {CleanupWorkspace} from './Cleanup';
+import type {CleanupHistory,ResourceGraph} from '@orrery/shared';
+import {CleanupWorkspace,CleanupHistoryPanel} from './Cleanup';
 const scope={source:'profile:test',account:'000000000000',region:'us-east-1'};
 const graph:ResourceGraph={...scope,collectedAt:'2026-10-27T00:00:00Z',nodes:[{id:'v',nativeId:'vol-test',name:'archive-volume',type:'ebs-volume',category:'storage',region:scope.region,status:'inactive',props:{}}],edges:[],reports:[],cleanup:{schemaVersion:1,scope,observedAt:'2026-10-27T00:00:00Z',findings:[{id:'f',resourceId:'v',ruleId:'detached-ebs',reviewClass:'connections',observedAt:'2026-10-27T00:00:00Z',fact:{resourceId:'v',ruleId:'detached-ebs',state:'available',attachments:0,sizeGiB:100}}],coverage:[]}};
 test('list and selected detail require explicit historical analysis and do not equate current state with cleanup eligibility',()=>{
@@ -19,4 +19,16 @@ test('selected resource exposes collected tags without inferring an owner or cre
  const html=renderToStaticMarkup(createElement(CleanupWorkspace,{graph:tagged,generation:0}));
  assert.match(html,/태그/);assert.match(html,/example-team/);assert.match(html,/archive &lt;test&gt;/);assert.match(html,/aws:cloudformation:stack-name/);
  const unknown=renderToStaticMarkup(createElement(CleanupWorkspace,{graph,generation:0}));assert.match(unknown,/수집된 태그 정보가 없습니다/);
+});
+
+test('latest history separates metadata, activity and state and labels incomplete evidence',()=>{
+ const stop={id:'stop',name:'StopInstances',effect:'idle' as const,time:'2026-09-12T00:00:00Z'};
+ const start={id:'start',name:'StartInstances',effect:'active' as const,time:'2026-09-10T00:00:00Z'};
+ const tag={id:'tag',name:'CreateTags',effect:'metadata' as const,time:'2026-10-20T00:00:00Z',actor:{type:'AssumedRole',label:'example-deploy-role'}};
+ const h:CleanupHistory={scope,findingId:'f',graphCollectedAt:graph.collectedAt,analyzedAt:graph.collectedAt,start:'2026-09-27T00:00:00Z',end:graph.collectedAt,lookbackStart:'2026-07-29T00:00:00Z',region:scope.region,pages:1,coverage:'complete',events:[start,tag,stop],duration:{basis:'event',since:stop.time,seconds:45*86400},verdict:'review',messages:[]};
+ const html=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history:h}));
+ assert.match(html,/마지막 관리 변경/);assert.match(html,/마지막 사용 관련 변경/);assert.match(html,/현재 상태로 변경한 기록/);assert.match(html,/example-deploy-role/);assert.match(html,/조회된 전체 이력 \(3개\)/);
+ const list=html.slice(html.indexOf('<ul>'));assert.ok(list.indexOf('CreateTags')<list.indexOf('StopInstances'));assert.ok(list.indexOf('StopInstances')<list.indexOf('StartInstances'));
+ const partial=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history:{...h,coverage:'partial',duration:{basis:'unknown'}}}));assert.match(partial,/조회된 범위의 최신 기록/);assert.match(partial,/전체 범위의 마지막 기록을 확정할 수 없습니다/);
+ const empty=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history:{...h,events:[],duration:{basis:'unknown'}}}));assert.match(empty,/최근 90일 내 해당 이력 확인 안 됨/);
 });

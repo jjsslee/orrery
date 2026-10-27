@@ -63,3 +63,10 @@
 .cleanup-tags dl>div { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:12px;padding:7px 0;border-bottom:1px solid var(--line); }
 .cleanup-tags dt,.cleanup-tags dd { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
 .cleanup-tags dt,.cleanup-tags p { color:var(--ink-3);font-size:var(--fs-small); }
+
+.cleanup-latest { margin:12px 0;font-size:var(--fs-small); }
+.cleanup-latest>div { padding:10px 0;border-bottom:1px solid var(--line); }
+.cleanup-latest dt { color:var(--ink-3);margin-bottom:5px; }
+.cleanup-latest dd { margin:0;overflow-wrap:anywhere; }
+.cleanup-latest dd>strong,.cleanup-latest dd>time,.cleanup-latest dd>span,.cleanup-event-actor { display:block;white-space:pre-wrap;overflow-wrap:anywhere; }
+.cleanup-latest time,.cleanup-event-actor { font-size:var(--fs-meta);color:var(--ink-3);margin-top:4px; }

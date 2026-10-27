@@ -407,7 +407,8 @@ export interface CleanupHistoryEvent {
   id: string;
   time: string;
   name: string;
-  effect: 'idle' | 'active' | 'change';
+  effect: 'idle' | 'active' | 'change' | 'metadata';
+  actor?: { type: string; label: string };
 }
 export interface CleanupHistory {
   scope: CleanupSnapshot['scope'];

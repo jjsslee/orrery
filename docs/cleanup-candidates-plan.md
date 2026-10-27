@@ -44,7 +44,7 @@
 ## 구현 경계 및 저장
 
 - `server/src/cleanup/observe.ts`, `evaluate.ts`: 기존 collector의 typed 사실 및 하위 API coverage를 보존하고 현재 상태를 평가한다.
-- `history.ts`: 안전한 이벤트 이름·시각·효과만 추출한다. 원본 CloudTrail payload, 사용자 신원, IP를 브라우저나 캐시에 전달하지 않는다.
+- `history.ts`: 안전한 이벤트 이름·시각·효과만 추출한다. 원본 CloudTrail payload, 액세스 키, IP를 브라우저나 캐시에 전달하지 않는다. 실행 주체의 허용된 표시 식별자만 함께 전달한다.
 - `routes.ts`: 현재 계정의 캐시된 구성과 finding을 검증한 뒤 분석한다. 구성 시각이 다르거나 10분 이상 지났으면 재수집을 요청한다.
 - `ResourceGraph.cleanup`를 추가하고 구성 캐시를 graph-v6로 분리한다. 구성 사실은 기존 `.orrery-cache/` 저장 정책을 따른다.
 - 이력은 서버 메모리에만 최대 100개/5분 보관한다. complete 결과만 재사용한다. 동일 요청을 합치며 동시 분석은 최대 2개다.
@@ -66,3 +66,11 @@
 - [CloudFront CloudTrail 기록](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/logging_using_cloudtrail.html)
 - [EC2 StopInstances](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_StopInstances.html)
 - [DescribeTargetHealth](https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTargetHealth.html)
+
+### 마지막 이력 표시 (v0.6.2)
+
+30일 후보 판정과 별도로 최근 90일 조회 범위의 마지막 관리 변경, 마지막 사용 관련 변경(기동·연결·등록·활성화), 현재 상태 변경 근거를 상세에 표시한다. 태그 변경은 관리 이력에 포함하되 상태 지속 기간 판정에는 사용하지 않는다. 조회된 전체 성공 관리 변경 이력은 최신순으로 펼쳐 볼 수 있다. 읽기 요청과 실패 요청은 표시 대상이 아니다.
+
+실행 주체는 CloudTrail의 identity type과 ARN/사용자명/호출 서비스 중 확인되는 식별자만 표시한다. Role 세션을 실제 사람이나 자원 생성자로 단정하지 않는다. 원본 이벤트·액세스 키·IP는 전달하거나 저장하지 않는다. 일부 조회·오류는 ‘조회된 범위의 최신 기록’으로 표시하며, 기록 부재는 미사용 증거가 아니다. 90일 이전 이력을 위한 S3/Lake 연결과 생성자 전용 조회는 이번 범위에 포함하지 않는다.
+
+v0.6.2 검증: 서버 91개·웹 65개(총 156개), typecheck/build/diff 검사 통과. fixture 브라우저에서 세 종류의 마지막 기록, 실행 주체, 전체 이력 최신순 및 390px 가로 넘침 없음을 확인했다. 세 플랫폼 ZIP 무결성·버전, Mac 서명, Windows PE 형식, ARM 내장 서버 health 및 새 UI 자산을 확인했다. 실계정 이력 대조·Windows/Intel Mac 실제 실행은 미검증이다.

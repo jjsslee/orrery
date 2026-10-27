@@ -5,18 +5,18 @@ const DAY = 86400000;
 export const MAX_HISTORY_PAGES = 10;
 const SOURCES = { 'detached-ebs': 'ec2.amazonaws.com', 'stopped-ec2': 'ec2.amazonaws.com', 'empty-target-group': 'elasticloadbalancing.amazonaws.com', 'disabled-cloudfront': 'cloudfront.amazonaws.com' } as const;
 
-/** Resource-filtered events; raw CloudTrail payload and identities never leave this module. */
+/** Resource-filtered events; only an allowlisted actor type/label leaves this module, never raw payload or credentials. */
 export function parseHistoryEvent(event: Event, node: ResourceNode, finding: CleanupFinding): { event?: CleanupHistoryEvent; malformed?: boolean } {
   if (!event.EventSource) return { malformed: true };
   if (event.EventSource !== SOURCES[finding.ruleId]) return {};
   if (!event.Resources?.some(r => r.ResourceName === node.nativeId || (node.arn && r.ResourceName === node.arn))) return { malformed: true };
-  let raw: { errorCode?: unknown; readOnly?: unknown; requestParameters?: Record<string, unknown>; responseElements?: Record<string, unknown> };
+  let raw: { errorCode?: unknown; readOnly?: unknown; requestParameters?: Record<string, unknown>; responseElements?: Record<string, unknown>; userIdentity?: { type?: unknown; arn?: unknown; userName?: unknown; invokedBy?: unknown } };
   try { raw = JSON.parse(event.CloudTrailEvent ?? ''); if (!raw || typeof raw !== 'object') return { malformed: true }; } catch { return { malformed: true }; }
   if (raw.errorCode || raw.readOnly === true || raw.readOnly === 'true' || event.ReadOnly === 'true') return {};
   const name = event.EventName;
   if (!name || !event.EventTime || !Number.isFinite(event.EventTime.getTime())) return { malformed: true };
-  if (['CreateTags', 'DeleteTags', 'TagResource', 'UntagResource', 'AddTags', 'RemoveTags'].includes(name)) return {};
-  let effect: CleanupHistoryEvent['effect'] | undefined;
+  const metadata = ['CreateTags', 'DeleteTags', 'TagResource', 'UntagResource', 'AddTags', 'RemoveTags'].includes(name);
+  let effect: CleanupHistoryEvent['effect'] | undefined = metadata ? 'metadata' : undefined;
   if (finding.ruleId === 'stopped-ec2') {
     if (name === 'StopInstances') effect = 'idle';
     else if (['StartInstances', 'RunInstances', 'RebootInstances'].includes(name)) effect = 'active';
@@ -38,7 +38,10 @@ export function parseHistoryEvent(event: Event, node: ResourceNode, finding: Cle
   // Unknown writes may affect state. Retain their safe name, but do not infer idle duration.
   if (!effect && !/^(Get|List|Describe|Lookup|Head)/.test(name)) effect = 'change';
   if (!effect) return {};
-  return { event: { id: event.EventId ?? `${name}:${event.EventTime.toISOString()}`, time: event.EventTime.toISOString(), name, effect } };
+  const identity = raw.userIdentity;
+  const label = [identity?.arn, identity?.userName, identity?.invokedBy].find(v => typeof v === 'string' && v.length > 0 && v.length <= 2048);
+  const actor = typeof label === 'string' ? { type: typeof identity?.type === 'string' ? identity.type.slice(0,80) : 'Unknown', label } : undefined;
+  return { event: { actor, id: event.EventId ?? `${name}:${event.EventTime.toISOString()}`, time: event.EventTime.toISOString(), name, effect } };
 }
 
 export function summarizeHistory(base: Omit<CleanupHistory, 'duration' | 'verdict' | 'messages'>, finding: CleanupFinding): CleanupHistory {
@@ -48,7 +51,7 @@ export function summarizeHistory(base: Omit<CleanupHistory, 'duration' | 'verdic
   const result: CleanupHistory = { ...base, events, duration: { basis: 'unknown' }, verdict: 'insufficient', messages };
   if (base.coverage !== 'complete') { messages.push('조회 실패·상한·해석 불가로 기간 전체를 평가하지 못했습니다.'); return result; }
   if (events.some(e=>Date.parse(e.time)>snapshot)) { messages.push('구성 수집 후 변경 기록이 있습니다. 구성을 다시 수집하세요.'); return result; }
-  const latest = events[0];
+  const latest = events.find(e=>e.effect!=='metadata');
   if (latest?.effect === 'idle' && finding.ruleId !== 'empty-target-group') {
     // Display the event age, explicitly not a measured continuous idle interval.
     result.duration = { basis: 'event', since: latest.time, seconds: Math.max(0, (snapshot-Date.parse(latest.time))/1000) };
