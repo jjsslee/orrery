@@ -11,8 +11,8 @@ import { collect, errMsg } from './util.ts';
 
 function instanceParent(i: DBInstance): string | undefined {
   const group = i.DBSubnetGroup;
-  const subnet = group?.Subnets?.find((s) => s.SubnetAvailabilityZone?.Name === i.AvailabilityZone && s.SubnetIdentifier);
-  if (subnet?.SubnetIdentifier) return nid('subnet', subnet.SubnetIdentifier);
+  const candidates = group?.Subnets?.filter((s) => s.SubnetAvailabilityZone?.Name === i.AvailabilityZone && s.SubnetIdentifier) ?? [];
+  if (!i.MultiAZ && candidates.length === 1) return nid('subnet', candidates[0].SubnetIdentifier!);
   return group?.VpcId ? nid('vpc', group.VpcId) : undefined;
 }
 
@@ -53,6 +53,7 @@ async function run(ctx: CollectorContext) {
         클래스: i.DBInstanceClass ?? null,
         상태: i.DBInstanceStatus ?? null,
         '다중 AZ': Boolean(i.MultiAZ),
+        '배치 근거': i.MultiAZ ? 'DB 서브넷 그룹 VPC · 다중 AZ 요약' : 'DB 서브넷 그룹과 AZ · 후보가 하나일 때만 서브넷 배치',
         스토리지: i.AllocatedStorage != null ? `${i.AllocatedStorage} GiB${i.StorageType ? ` (${i.StorageType})` : ''}` : null,
         엔드포인트: i.Endpoint?.Address ?? null,
         포트: i.Endpoint?.Port ?? null,

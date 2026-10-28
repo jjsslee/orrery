@@ -5,10 +5,11 @@
  *   lambda → DLQ (routes). Env var values, KMS and role ARNs go to refs.
  * Tags: ListTags per function (ListFunctions does not return them).
  */
-import { LambdaClient, ListTagsCommand, paginateListEventSourceMappings, paginateListFunctions } from '@aws-sdk/client-lambda';
+import { LambdaClient, GetFunctionCommand, ListTagsCommand, paginateListEventSourceMappings, paginateListFunctions } from '@aws-sdk/client-lambda';
+import { EFSClient, DescribeAccessPointsCommand } from '@aws-sdk/client-efs';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { arnName, arnPath, arnService, edge, iso, nid, statusFromState, fmtBytes, tagsToRecord } from './ids.ts';
+import { isLocalArn, arnName, arnPath, arnService, edge, iso, nid, statusFromState, fmtBytes, tagsToRecord } from './ids.ts';
 import { attempt, collect, errMsg, lambdaNameFromArn } from './util.ts';
 
 /** Event source ARN → node id of the source we collect (undefined for kinesis/msk/...) */
@@ -45,6 +46,19 @@ async function run(ctx: CollectorContext) {
     if (!f.FunctionName) continue;
     const name = f.FunctionName;
     const vpcId = f.VpcConfig?.VpcId || undefined;
+    const relations: NonNullable<ResourceNode['relations']> = [];
+    for (const fs of f.FileSystemConfigs ?? []) {
+      if (!fs.Arn || !isLocalArn(fs.Arn, ctx)) continue;
+      const result = await attempt(ctx, 'lambda EFS access point', () => ctx.clients.get(EFSClient).send(new DescribeAccessPointsCommand({ AccessPointId: arnPath(fs.Arn!) })));
+      const point = result?.AccessPoints?.[0];
+      relations.push({ ref: point?.FileSystemId ? nid('efs', point.FileSystemId) : fs.Arn, kind: 'mounts', label: `${fs.LocalMountPath ?? '?'} · access point ${arnPath(fs.Arn)}` });
+    }
+    if (f.PackageType === 'Image') {
+      const detail = await attempt(ctx, 'lambda image metadata', () => lambda.send(new GetFunctionCommand({ FunctionName: f.FunctionArn ?? name })));
+      const image = detail?.Code?.ResolvedImageUri ?? detail?.Code?.ImageUri;
+      const match = image?.match(/^(\d+)\.dkr\.ecr\.([^.]+)\.amazonaws\.com(?:\.cn)?\/(.+?)(?:[:@].*)?$/);
+      if (match) relations.push({ ref: `arn:aws:ecr:${match[2]}:${match[1]}:repository/${match[3]}`, kind: 'references', label: 'Lambda 컨테이너 이미지' });
+    }
     const roleName = f.Role ? arnName(f.Role) : undefined;
     const envValues = Object.values(f.Environment?.Variables ?? {});
     const refs = [
@@ -54,9 +68,9 @@ async function run(ctx: CollectorContext) {
       f.DeadLetterConfig?.TargetArn,
       ...(f.FileSystemConfigs ?? []).map((c) => c.Arn),
     ].filter((r): r is string => Boolean(r));
-    // ListFunctions omits State (only GetFunctionConfiguration returns it): no state → assume active.
-    let status: Status = f.State ? statusFromState(f.State) : 'healthy';
-    let statusLabel: string | undefined = f.State;
+    // ListFunctions can omit State; missing observations are not health evidence.
+    let status: Status = f.State ? statusFromState(f.State) : 'unknown';
+    let statusLabel: string | undefined = f.State ?? '상태 미확인';
     if (f.LastUpdateStatus === 'Failed') { status = 'critical'; statusLabel = 'LastUpdate Failed'; }
     nodes.push({
       id: nid('lambda', name),
@@ -79,12 +93,14 @@ async function run(ctx: CollectorContext) {
         패키지: f.PackageType ?? 'Zip',
         레이어: f.Layers?.length ?? 0,
         VPC: vpcId ?? null,
+        '배치 근거': vpcId ? '사용자 VPC 연결 설정 · Lambda 실행 환경의 물리적 위치가 아님' : '사용자 VPC 연결 없음',
         핸들러: f.Handler ?? null,
         '코드 크기': f.CodeSize != null ? fmtBytes(f.CodeSize) : null,
         '환경 변수': envValues.length,
       },
       tags: f.FunctionArn ? tagsByArn.get(f.FunctionArn) : undefined,
       refs,
+      relations,
     });
     for (const sg of f.VpcConfig?.SecurityGroupIds ?? []) edges.push(edge('attached', nid('lambda', name), nid('security-group', sg)));
     if (roleName) edges.push(edge('assumes', nid('lambda', name), nid('iam-role', roleName)));
@@ -92,12 +108,12 @@ async function run(ctx: CollectorContext) {
     if (dlq) {
       const svc = arnService(dlq);
       const target = svc === 'sqs' ? nid('sqs-queue', arnName(dlq)) : svc === 'sns' ? nid('sns-topic', arnName(dlq)) : undefined;
-      if (target) edges.push(edge('routes', nid('lambda', name), target, { label: 'DLQ' }));
+      if (target && isLocalArn(dlq, ctx)) edges.push(edge('routes', nid('lambda', name), target, { label: 'DLQ' }));
     }
   }
 
   for (const m of mappings) {
-    if (!m.EventSourceArn || !m.FunctionArn) continue;
+    if (!m.EventSourceArn || !m.FunctionArn || !isLocalArn(m.EventSourceArn, ctx) || !isLocalArn(m.FunctionArn, ctx)) continue;
     const source = eventSourceNodeId(m.EventSourceArn);
     const fn = lambdaNameFromArn(m.FunctionArn);
     if (!source || !fn) continue;

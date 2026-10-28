@@ -139,10 +139,10 @@ export function Rail() {
       {graph && (
         <footer className="rail-foot">
           <div>총 {counts.total.toLocaleString()}개 자원 · {graph.edges.length.toLocaleString()}개 관계</div>
-          {graph.reports.filter((r) => !r.ok).length > 0 && (
+          {graph.reports.filter((r) => !r.ok || r.error).length > 0 && (
             <details className="rail-warn">
-              <summary>수집 실패 {graph.reports.filter((r) => !r.ok).length}건</summary>
-              <ul>{graph.reports.filter((r) => !r.ok).map((r) => <li key={r.collector}><b>{r.collector}</b> {r.error}</li>)}</ul>
+              <summary>수집 누락·주의 {graph.reports.filter((r) => !r.ok || r.error).length}건</summary>
+              <ul>{graph.reports.filter((r) => !r.ok || r.error).map((r) => <li key={r.collector}><b>{r.collector}</b> {r.error}</li>)}</ul>
             </details>
           )}
         </footer>

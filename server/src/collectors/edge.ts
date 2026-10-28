@@ -15,6 +15,7 @@ import {
 } from '@aws-sdk/client-apigatewayv2';
 import {
   Route53Client,
+  GetHostedZoneCommand,
   ListResourceRecordSetsCommand,
   ListTagsForResourcesCommand,
   paginateListHostedZones,
@@ -23,7 +24,7 @@ import {
 } from '@aws-sdk/client-route-53';
 import type { CleanupDiscovery, ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { edge, iso, nid, tagsToRecord } from './ids.ts';
+import { isLocalArn, edge, iso, nid, tagsToRecord } from './ids.ts';
 import { attempt, chunk, collect, countSummary, errMsg, hostOf, lambdaNameFromArn } from './util.ts';
 
 import { observeCleanup } from '../cleanup/observe.ts';
@@ -89,6 +90,15 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup:
     const origins = d.Origins?.Items ?? [];
     const aliases = d.Aliases?.Items ?? [];
     const defaultOrigin = origins.find((o) => o.Id === d.DefaultCacheBehavior?.TargetOriginId)?.DomainName ?? origins[0]?.DomainName ?? null;
+    const relations: NonNullable<ResourceNode['relations']> = [];
+    const behaviors = [ { ...d.DefaultCacheBehavior, PathPattern: '(기본 경로)' }, ...(d.CacheBehaviors?.Items ?? []) ];
+    for (const behavior of behaviors) {
+      const ids = d.OriginGroups?.Items?.find(g => g.Id === behavior.TargetOriginId)?.Members?.Items?.map(m => m.OriginId) ?? [behavior.TargetOriginId];
+      for (const [index, originId] of ids.entries()) {
+        const origin = origins.find(o => o.Id === originId);
+        if (origin?.DomainName) relations.push({ ref: origin.DomainName, kind: 'origin', label: `${behavior.PathPattern} · ${behavior.ViewerProtocolPolicy ?? '?'} · ${behavior.AllowedMethods?.Items?.join(',') ?? '?'} · origin=${originId}${origin.OriginPath ?? ''}${ids.length > 1 ? ` · failover 순서 ${index + 1}` : ''}` });
+      }
+    }
     const deployed = d.Status === 'Deployed';
     nodes.push({
       id: nid('cloudfront', d.Id),
@@ -114,7 +124,8 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup:
         설명: d.Comment || null,
       },
       tags: d.ARN ? tagsByArn.get(d.ARN) : undefined,
-      refs: [...origins.map((o) => o.DomainName), d.WebACLId, d.ViewerCertificate?.ACMCertificateArn].filter((o): o is string => Boolean(o)),
+      relations,
+      refs: [d.WebACLId, d.ViewerCertificate?.ACMCertificateArn].filter((o): o is string => Boolean(o)),
     });
   }
 }
@@ -139,7 +150,8 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
       const consume = (path: string, method: string, integration?: Integration) => {
         if (!integration) return;
         kinds[integration.type ?? '?'] = (kinds[integration.type ?? '?'] ?? 0) + 1;
-        const fn = lambdaFromIntegrationUri(integration.uri);
+        const lambdaArn = integration.uri?.match(/arn:aws:lambda:[^/]+/)?.[0];
+        const fn = isLocalArn(lambdaArn, ctx) ? lambdaFromIntegrationUri(integration.uri) : undefined;
         if (fn) (lambdaRoutes.get(fn) ?? lambdaRoutes.set(fn, []).get(fn)!).push(`${method} ${path}`);
         const host = hostFromIntegrationUri(integration.uri);
         if (host) refs.add(host);
@@ -169,8 +181,8 @@ async function apiGatewayV1(ctx: CollectorContext, nodes: ResourceNode[], edges:
         nativeId: id,
         arn: `arn:aws:apigateway:${ctx.region}::/restapis/${id}`,
         region: ctx.region,
-        status: stages?.item?.length ? 'healthy' : 'warning',
-        statusLabel: stages?.item?.length ? `스테이지 ${stages.item.length}개` : '배포된 스테이지 없음',
+        status: !stages ? 'unknown' : stages.item?.length ? 'healthy' : 'warning',
+        statusLabel: !stages ? '스테이지 조회 실패' : stages.item?.length ? `스테이지 ${stages.item.length}개` : '배포된 스테이지 없음',
         props: {
           유형: 'REST',
           엔드포인트: `${id}.execute-api.${ctx.region}.amazonaws.com`,
@@ -226,10 +238,12 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
       for (const i of integrations ?? []) {
         const kind = i.IntegrationSubtype ?? i.IntegrationType ?? '?';
         kinds[kind] = (kinds[kind] ?? 0) + 1;
-        const fn = lambdaFromIntegrationUri(i.IntegrationUri);
+        const lambdaArn = i.IntegrationUri?.match(/arn:aws:lambda:[^/]+/)?.[0];
+        const fn = isLocalArn(lambdaArn, ctx) ? lambdaFromIntegrationUri(i.IntegrationUri) : undefined;
         if (fn) lambdas.set(fn, (lambdas.get(fn) ?? 0) + 1);
         const host = hostFromIntegrationUri(i.IntegrationUri);
         if (host) refs.add(host);
+        if (i.IntegrationUri?.startsWith('arn:aws:elasticloadbalancing:')) refs.add(i.IntegrationUri);
         for (const v of Object.values(i.RequestParameters ?? {})) if (v && (v.startsWith('arn:') || v.startsWith('https://'))) refs.add(v);
       }
       const kind = (api.ProtocolType ?? 'HTTP').toLowerCase();
@@ -241,8 +255,8 @@ async function apiGatewayV2(ctx: CollectorContext, nodes: ResourceNode[], edges:
         nativeId: id,
         arn: `arn:aws:apigateway:${ctx.region}::/apis/${id}`,
         region: ctx.region,
-        status: stages?.Items?.length ? 'healthy' : 'warning',
-        statusLabel: stages?.Items?.length ? `스테이지 ${stages.Items.length}개` : '배포된 스테이지 없음',
+        status: !stages ? 'unknown' : stages.Items?.length ? 'healthy' : 'warning',
+        statusLabel: !stages ? '스테이지 조회 실패' : stages.Items?.length ? `스테이지 ${stages.Items.length}개` : '배포된 스테이지 없음',
         props: {
           유형: api.ProtocolType ?? 'HTTP',
           엔드포인트: hostOf(api.ApiEndpoint) ?? `${id}.execute-api.${ctx.region}.amazonaws.com`,
@@ -294,6 +308,7 @@ async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
         }
         return out;
       })) ?? [];
+      const detail = z.Config?.PrivateZone ? await attempt(ctx, 'route53 private zone VPCs', () => r53.send(new GetHostedZoneCommand({ Id: zoneId }))) : undefined;
       const summary = summariseRecords(records, ctx.region);
       const domain = (z.Name ?? '').replace(/\.$/, '');
       nodes.push({
@@ -308,12 +323,14 @@ async function route53(ctx: CollectorContext, nodes: ResourceNode[]) {
         props: {
           도메인: domain || null,
           프라이빗: Boolean(z.Config?.PrivateZone),
+          'VPC 연결 조회': z.Config?.PrivateZone ? detail ? '확인' : '미확인' : '퍼블릭 영역',
           '레코드 수': z.ResourceRecordSetCount ?? summary.count,
           '레코드 유형': countSummary(summary.byType),
           레코드: summary.names.join(', ') || null,
           설명: z.Config?.Comment || null,
         },
         tags: tagsByZone.get(zoneId),
+        relations: (detail?.VPCs ?? []).filter(v => v.VPCId).map(v => ({ ref: v.VPCRegion === ctx.region ? nid('vpc', v.VPCId!) : `arn:aws:ec2:${v.VPCRegion}:${ctx.account}:vpc/${v.VPCId}`, kind: 'attached', label: `private zone VPC · ${v.VPCRegion}` })),
         refs: summary.refs,
       });
     }),

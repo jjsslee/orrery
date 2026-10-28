@@ -8,16 +8,18 @@
 import {
   EC2Client,
   paginateDescribeInstances,
+  paginateDescribeSubnets,
   paginateDescribeInstanceStatus,
   paginateDescribeVolumes,
   type Instance,
   type Volume,
 } from '@aws-sdk/client-ec2';
+import { IAMClient, GetInstanceProfileCommand } from '@aws-sdk/client-iam';
 import { AutoScalingClient, paginateDescribeAutoScalingGroups } from '@aws-sdk/client-auto-scaling';
 import type { CleanupDiscovery, ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { edge, iso, nameFromTags, nid, statusFromState, tagsToRecord } from './ids.ts';
-import { collect, errMsg, roleNameFromArn } from './util.ts';
+import { attempt, collect, errMsg, roleNameFromArn } from './util.ts';
 
 import { observeCleanup } from '../cleanup/observe.ts';
 
@@ -107,6 +109,15 @@ async function run(ctx: CollectorContext) {
     }),
   ]);
 
+  const subnets = asgs.length ? await attempt(ctx, 'asg subnets', () => collect(paginateDescribeSubnets({ client: ec2 }, {}), p => p.Subnets)) ?? [] : [];
+  const vpcBySubnet = new Map(subnets.map(s => [s.SubnetId, s.VpcId]));
+  const rolesByProfile = new Map<string, string[]>();
+  const profileNames = [...new Set(instances.map(i => roleNameFromArn(i.IamInstanceProfile?.Arn)).filter((v): v is string => Boolean(v)))];
+  await Promise.all(profileNames.map(async name => {
+    const result = await attempt(ctx, 'ec2 instance profile', () => ctx.clients.get(IAMClient).send(new GetInstanceProfileCommand({ InstanceProfileName: name })));
+    rolesByProfile.set(name, (result?.InstanceProfile?.Roles ?? []).flatMap(r => r.RoleName ? [r.RoleName] : []));
+  }));
+
   const health = new Map<string, { instance?: string; system?: string }>();
   for (const s of statuses) if (s.InstanceId) health.set(s.InstanceId, { instance: s.InstanceStatus?.Status, system: s.SystemStatus?.Status });
 
@@ -165,7 +176,7 @@ async function run(ctx: CollectorContext) {
     for (const sg of i.SecurityGroups ?? []) {
       if (sg.GroupId) edges.push(edge('attached', nid('ec2-instance', id), nid('security-group', sg.GroupId)));
     }
-    if (profileName) edges.push(edge('assumes', nid('ec2-instance', id), nid('iam-role', profileName)));
+    for (const role of rolesByProfile.get(profileName ?? '') ?? []) edges.push(edge('assumes', nid('ec2-instance', id), nid('iam-role', role)));
   }
 
   for (const g of asgs) {
@@ -174,7 +185,10 @@ async function run(ctx: CollectorContext) {
     const members = g.Instances ?? [];
     const inService = members.filter((m) => m.LifecycleState === 'InService').length;
     const desired = g.DesiredCapacity ?? 0;
-    const vpcId = members.map((m) => (m.InstanceId ? vpcByInstance.get(m.InstanceId) : undefined)).find(Boolean);
+    const configured = (g.VPCZoneIdentifier?.split(',').filter(Boolean) ?? []).map(s => vpcBySubnet.get(s));
+    const candidates = configured.length ? configured : members.map(m => m.InstanceId ? vpcByInstance.get(m.InstanceId) : undefined);
+    const uniqueVpcs = new Set(candidates.filter(Boolean));
+    const vpcId = candidates.every(Boolean) && uniqueVpcs.size === 1 ? [...uniqueVpcs][0] : undefined;
     const template =
       g.LaunchTemplate?.LaunchTemplateName ??
       g.MixedInstancesPolicy?.LaunchTemplate?.LaunchTemplateSpecification?.LaunchTemplateName ??
@@ -196,6 +210,7 @@ async function run(ctx: CollectorContext) {
       props: {
         '최소/희망/최대': `${g.MinSize ?? 0} / ${desired} / ${g.MaxSize ?? 0}`,
         '현재 인스턴스': members.length,
+        '설정 서브넷': g.VPCZoneIdentifier ?? null,
         '서비스 중': inService,
         '시작 템플릿': template,
         가용영역: (g.AvailabilityZones ?? []).join(', ') || null,

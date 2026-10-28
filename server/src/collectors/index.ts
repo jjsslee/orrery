@@ -27,9 +27,14 @@ export async function runCollectors(
       const started = Date.now();
       let report: CollectorReport;
       try {
-        const out = await c.run(ctx);
+        const warnings: string[] = [];
+        const out = await c.run({ ...ctx, log(message) {
+          ctx.log(message);
+          // Recovery notices alone do not make a collection partial.
+          if (!message.includes('재시도')) warnings.push(message);
+        } });
         outputs.push(out);
-        report = { collector: c.name, ok: true, durationMs: Date.now() - started, nodes: out.nodes.length, edges: out.edges.length };
+        report = { collector: c.name, ok: warnings.length === 0, durationMs: Date.now() - started, nodes: out.nodes.length, edges: out.edges.length, error: warnings.length ? `부분 수집: ${warnings.length}건 · ${warnings.slice(0, 3).join(" / ")}` : undefined };
       } catch (err) {
         const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
         ctx.log(`[${c.name}] 실패: ${message}`);

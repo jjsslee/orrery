@@ -10,6 +10,7 @@ import {
   DescribeTagsCommand,
   DescribeTargetHealthCommand,
   paginateDescribeListeners,
+  paginateDescribeRules,
   paginateDescribeLoadBalancers,
   paginateDescribeTargetGroups,
   type TargetHealthDescription,
@@ -19,6 +20,7 @@ import type { Collector, CollectorContext } from './types.ts';
 import { arnName, edge, iso, nid, statusFromState, tagsToRecord } from './ids.ts';
 import { attempt, chunk, collect } from './util.ts';
 
+import { ruleLabel } from './relationships.ts';
 import { observeCleanup } from '../cleanup/observe.ts';
 
 interface HealthSummary { healthy: number; total: number }
@@ -58,6 +60,8 @@ async function run(ctx: CollectorContext) {
     observeCleanup(cleanup, 'empty-target-group', 'DescribeTargetGroups', () => collect(paginateDescribeTargetGroups({ client: elb }, {}), (p) => p.TargetGroups)),
   ]);
 
+  const listenerArns = new Map<string, string[]>();
+  const ruleSummaries = new Map<string, string[]>();
   const listenerSummary = new Map<string, string[]>();
   const tgHealth = new Map<string, TargetHealthDescription[]>();
   const tagsByArn = new Map<string, Record<string, string> | undefined>();
@@ -72,11 +76,26 @@ async function run(ctx: CollectorContext) {
       const listeners = await attempt(ctx, `elb listeners ${lb.LoadBalancerName}`, () =>
         collect(paginateDescribeListeners({ client: elb }, { LoadBalancerArn: lb.LoadBalancerArn }), (p) => p.Listeners),
       );
+      const summaries: string[] = [];
       for (const listener of listeners ?? []) {
+        const rules = lb.Type === 'application' && listener.ListenerArn
+          ? await attempt(ctx, 'elb listener rules', () => collect(paginateDescribeRules({ client: elb }, { ListenerArn: listener.ListenerArn }), p => p.Rules))
+          : [{ IsDefault: true, Actions: listener.DefaultActions }];
+        for (const rule of rules ?? []) {
+          const condition = `${listener.Protocol}:${listener.Port} · ${ruleLabel(rule)}`;
+          summaries.push(`${condition} · ${JSON.stringify((rule.Actions ?? []).map(a => ({ type: a.Type, order: a.Order, forward: a.ForwardConfig, targetGroup: a.TargetGroupArn, redirect: a.RedirectConfig, fixedResponse: a.FixedResponseConfig ? { statusCode: a.FixedResponseConfig.StatusCode, contentType: a.FixedResponseConfig.ContentType } : undefined })))}`);
+          for (const action of rule.Actions ?? []) {
+            if (action.Type !== 'forward') continue;
+            const destinations = action.ForwardConfig?.TargetGroups ?? (action.TargetGroupArn ? [{ TargetGroupArn: action.TargetGroupArn }] : []);
+            for (const dest of destinations) if (dest.TargetGroupArn) edges.push(edge('targets', nid('load-balancer', lb.LoadBalancerArn!), nid('target-group', dest.TargetGroupArn), { label: `${condition} · weight=${dest.Weight ?? '기본'}`, props: { 근거: 'listener rule', '동작 순서': action.Order ?? null } }));
+          }
+        }
         for (const certificate of listener.Certificates ?? []) {
           if (certificate.CertificateArn) edges.push(edge('attached', nid('load-balancer', lb.LoadBalancerArn), nid('acm-certificate', certificate.CertificateArn)));
         }
       }
+      ruleSummaries.set(lb.LoadBalancerArn, summaries);
+      if (listeners) listenerArns.set(lb.LoadBalancerArn, listeners.flatMap(l => l.ListenerArn ? [l.ListenerArn] : []));
       if (listeners) listenerSummary.set(lb.LoadBalancerArn, listeners.map((l) => `${l.Protocol ?? '?'}:${l.Port ?? '?'}`));
     }),
     ...tgs.map(async (tg) => {
@@ -123,7 +142,9 @@ async function run(ctx: CollectorContext) {
       tags: tagsByArn.get(arn),
     });
     for (const lbArn of tg.LoadBalancerArns ?? []) {
-      edges.push(edge('targets', nid('load-balancer', lbArn), nid('target-group', arn), { status, label: known ? statusLabel : undefined }));
+      const configured = edges.filter(e => e.source === nid('load-balancer', lbArn) && e.target === nid('target-group', arn));
+      if (configured.length) for (const e of configured) e.status = status;
+      else edges.push(edge('targets', nid('load-balancer', lbArn), nid('target-group', arn), { status, label: 'TG 연결 · 전달 조건 미확인' }));
       const cur = lbHealth.get(lbArn) ?? { healthy: 0, total: 0 };
       cur.healthy += summary.healthy;
       cur.total += summary.total;
@@ -136,7 +157,16 @@ async function run(ctx: CollectorContext) {
       if (tg.TargetType === 'instance' || id.startsWith('i-')) targetId = nid('ec2-instance', id);
       else if (tg.TargetType === 'lambda' || id.includes(':lambda:')) targetId = nid('lambda', arnName(id));
       else if (tg.TargetType === 'alb' || id.includes(':loadbalancer/')) targetId = nid('load-balancer', id);
-      if (!targetId) continue; // ip targets: resolved by the ECS collector
+      if (!targetId && tg.TargetType === 'ip') {
+        // A registered IP is a proven endpoint, not necessarily an EC2/ECS resource
+        // in the target group's VPC (it may be routed from another network).
+        const nativeId = `${arn}/${id}:${h.Target?.Port ?? ''}`;
+        targetId = nid('ip-target', nativeId);
+        nodes.push({ id: targetId, nativeId, type: 'ip-target', category: 'network', name: `${id}:${h.Target?.Port ?? '?'}`, region: ctx.region,
+          status: targetStatus(h.TargetHealth?.State), statusLabel: h.TargetHealth?.State,
+          props: { 주소: id, 포트: h.Target?.Port ?? null, '소속 설명': '등록 주소만 확인 · 실제 자원과 VPC는 미확인', '타깃 그룹': tg.TargetGroupName ?? arn } });
+      }
+      if (!targetId) continue;
       edges.push(
         edge('targets', nid('target-group', arn), targetId, {
           label: h.Target?.Port != null ? String(h.Target.Port) : undefined,
@@ -176,6 +206,8 @@ async function run(ctx: CollectorContext) {
         'IP 유형': lb.IpAddressType ?? null,
         생성: iso(lb.CreatedTime),
         _lbType: lb.Type ?? 'application',
+        '리스너 규칙·동작': ruleSummaries.get(arn)?.join('\n') ?? null,
+        _listenerArns: listenerArns.get(arn)?.join(',') ?? null,
       },
       tags: tagsByArn.get(arn),
     });

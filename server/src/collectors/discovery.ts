@@ -1,4 +1,4 @@
-import { ServiceDiscoveryClient, GetNamespaceCommand, GetServiceCommand, ListTagsForResourceCommand, paginateListNamespaces, paginateListServices } from '@aws-sdk/client-servicediscovery';
+import { ServiceDiscoveryClient, GetNamespaceCommand, GetServiceCommand, ListTagsForResourceCommand, paginateListInstances, paginateListNamespaces, paginateListServices } from '@aws-sdk/client-servicediscovery';
 import type { Collector } from './types.ts';
 import type { ResourceNode, ResourceEdge } from '@orrery/shared';
 import { nid, edge, tagsToRecord } from './ids.ts';
@@ -30,6 +30,14 @@ export const discoveryCollector: Collector = {
       nodes.push({ id: nid('cloudmap-service', s.Id), type: 'cloudmap-service', category: 'network', name: n.Name ?? s.Id, nativeId: s.Id, arn: n.Arn,
         region: ctx.region, status: 'unknown', statusLabel: d ? undefined : '상세 미수집',
         props: { '등록 인스턴스': n.InstanceCount ?? null, 유형: n.Type ?? null }, tags: tagsToRecord(tags?.Tags) });
+      const instances = await attempt(ctx, `cloudmap instances ${s.Id}`, () => collect(paginateListInstances({ client }, { ServiceId: s.Id! }), p => p.Instances));
+      const serviceNode = nodes.find(node => node.id === nid('cloudmap-service', s.Id!))!;
+      serviceNode.props['등록 대상 조회'] = instances ? '확인' : '미확인';
+      serviceNode.relations = (instances ?? []).flatMap(instance => {
+        const a = instance.Attributes ?? {};
+        const target = a.AWS_EC2_INSTANCE_ID ? nid('ec2-instance', a.AWS_EC2_INSTANCE_ID) : a.AWS_INSTANCE_IPV4 ?? a.AWS_INSTANCE_IPV6 ?? a.AWS_INSTANCE_CNAME;
+        return target ? [{ ref: target, kind: 'resolves' as const, label: `등록 ${instance.Id} · port=${a.AWS_INSTANCE_PORT ?? '?'} · AZ=${a.AWS_AVAILABILITY_ZONE ?? '?'}` }] : [];
+      });
       if (d?.Service?.NamespaceId) edges.push(edge('member', nid('cloudmap-namespace', d.Service.NamespaceId), nid('cloudmap-service', s.Id)));
     }));
     return { nodes, edges };

@@ -1,7 +1,7 @@
 {
   "name": "orrery",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "AWS 자원과 관계를 한 장의 지도로 보여주는 읽기 전용 토폴로지 뷰어",
   "workspaces": [
     "shared",
@@ -14,7 +14,7 @@
     "build": "npm run build -w web",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web && npm run typecheck -w desktop",
-    "test": "npm run test -w server && npm run test -w web",
+    "test": "npm run test -w server && npm run test -w web && npm run test -w desktop",
     "package": "npm run build && node scripts/package.mjs"
   },
   "devDependencies": {

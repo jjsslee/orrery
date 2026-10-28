@@ -32,6 +32,8 @@ export type ResourceType =
   | 'vpc-endpoint'
   | 'load-balancer'
   | 'target-group'
+  | 'ip-target'
+  | 'configuration-target'
   | 'cloudfront'
   | 'api-gateway'
   | 'appsync-api'
@@ -137,6 +139,8 @@ export interface ResourceNode {
    * KMS key ids, policy ARNs...). The assembler resolves them into edges.
    */
   refs?: string[];
+  /** Typed relationship from a specific AWS configuration field. */
+  relations?: Array<{ ref: string; kind: EdgeKind; label: string }>;
 }
 
 export interface AlarmInfo {
@@ -148,6 +152,7 @@ export interface AlarmInfo {
 }
 
 export type EdgeKind =
+  | 'references' // identifier found in configuration; no runtime access assertion
   | 'attached' // ENI/volume style attachments, instance → SG, LB → subnet
   | 'routes' // IGW/NAT routing, subnet → NAT
   | 'targets' // LB → target (through a target group)

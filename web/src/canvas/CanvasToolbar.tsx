@@ -4,7 +4,7 @@ import { useStore, type Overlays } from '../model/store';
 import type { Scene } from '../layout/scene';
 
 const LAYERS: Array<{ key: keyof Overlays; label: string; hint: string }> = [
-  { key: 'traffic', label: '트래픽', hint: 'CloudWatch 지표에 비례해 관계선 위로 펄스를 흘립니다' },
+  { key: 'traffic', label: '자원 활동', hint: 'CloudWatch 상대 활동량입니다. 관계선의 실제 트래픽을 의미하지 않습니다' },
   { key: 'targetGroups', label: '타깃 그룹', hint: '로드 밸런서와 타깃 사이의 타깃 그룹을 노드로 펼칩니다' },
   { key: 'security', label: '보안 그룹', hint: '보안 그룹 노드와 허용 규칙을 표시합니다' },
   { key: 'iam', label: 'IAM 역할', hint: '컴퓨트 자원이 맡는 IAM 역할을 표시합니다' },

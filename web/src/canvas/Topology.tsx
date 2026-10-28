@@ -5,7 +5,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useStore } from '../model/store';
-import { buildScene, type Scene } from '../layout/scene';
+import { sceneStructureKey, buildScene, type Scene } from '../layout/scene';
 import { layoutScene, type Placement } from '../layout/elk';
 import { ResourceNode, type ResourceNodeType } from './nodes/ResourceNode';
 import { PlateNode, type PlateNodeType } from './nodes/PlateNode';
@@ -62,7 +62,7 @@ function TopologyInner() {
   );
 
   // Re-layout only when the structure changes, not on dim/traffic updates.
-  const structureKey = useMemo(() => (scene ? `${scene.nodes.map((n) => n.id).join('|')}#${scene.edges.map((e) => e.id).join('|')}` : ''), [scene]);
+  const structureKey = useMemo(() => (scene ? sceneStructureKey(scene) : ''), [scene]);
   const [placed, setPlaced] = useState<{ key: string; placements: Map<string, Placement>; scene: Scene }>();
   const [laying, setLaying] = useState(false);
   const layoutGen = useRef(0);

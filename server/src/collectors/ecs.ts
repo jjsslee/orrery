@@ -10,13 +10,16 @@ import {
   DescribeClustersCommand,
   DescribeServicesCommand,
   DescribeTaskDefinitionCommand,
+  DescribeTasksCommand,
+  DescribeContainerInstancesCommand,
+  paginateListTasks,
   paginateListClusters,
   paginateListServices,
   type Cluster,
   type Service,
   type TaskDefinition,
 } from '@aws-sdk/client-ecs';
-import { EC2Client, paginateDescribeSubnets } from '@aws-sdk/client-ec2';
+import { EC2Client, DescribeInstancesCommand, paginateDescribeSubnets } from '@aws-sdk/client-ec2';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
 import { arnName, arnPath, edge, iso, nid, statusFromState } from './ids.ts';
@@ -39,7 +42,7 @@ async function describeClusters(ctx: CollectorContext, ecs: ECSClient, arns: str
     arns.map(async (arn) => {
       const res = await attempt(ctx, `ecs describe cluster ${arnName(arn)}`, () => ecs.send(new DescribeClustersCommand({ clusters: [arn], include: ['STATISTICS', 'TAGS'] })));
       if (res?.clusters?.length) out.push(...res.clusters);
-      else out.push({ clusterArn: arn, clusterName: arnName(arn), status: 'ACCESS_DENIED' });
+      else out.push({ clusterArn: arn, clusterName: arnName(arn), status: 'DETAIL_UNAVAILABLE' });
     }),
   );
   return out;
@@ -86,8 +89,8 @@ async function run(ctx: CollectorContext) {
         nativeId: name,
         arn: c.clusterArn,
         region: ctx.region,
-        status: c.status === 'ACCESS_DENIED' ? 'unknown' : statusFromState(c.status),
-        statusLabel: c.status === 'ACCESS_DENIED' ? '접근 거부' : c.status,
+        status: c.status === 'DETAIL_UNAVAILABLE' ? 'unknown' : statusFromState(c.status),
+        statusLabel: c.status === 'DETAIL_UNAVAILABLE' ? '상세 조회 실패' : c.status,
         props: {
           상태: c.status ?? null,
           '실행 작업': c.runningTasksCount ?? 0,
@@ -107,9 +110,20 @@ async function run(ctx: CollectorContext) {
       if (!serviceArns?.length) return;
       await Promise.all(
         chunk(serviceArns, 10).map(async (batch) => {
-          const res = await attempt(ctx, `ecs describe services ${name}`, () => ecs.send(new DescribeServicesCommand({ cluster: c.clusterArn, services: batch, include: ['TAGS'] })));
-          if (res) for (const s of res.services ?? []) services.push({ clusterName: name, service: s });
-          else for (const arn of batch) services.push({ clusterName: name, service: { serviceArn: arn, serviceName: arnName(arn), status: 'ACCESS_DENIED' } });
+          let found: Service[] = [];
+          try {
+            const res = await ctx.limit(() => ecs.send(new DescribeServicesCommand({ cluster: c.clusterArn, services: batch, include: ['TAGS'] })));
+            found = res.services ?? [];
+          } catch { /* A denied sibling must not conceal readable services. */ }
+          services.push(...found.map(service => ({ clusterName: name, service })));
+          for (const arn of batch.filter(arn => !found.some(s => s.serviceArn === arn))) {
+            const res = await attempt(ctx, `ecs describe service ${arnName(arn)}`, () => ecs.send(new DescribeServicesCommand({ cluster: c.clusterArn, services: [arn], include: ['TAGS'] })));
+            if (res?.services?.length) services.push(...res.services.map(service => ({ clusterName: name, service })));
+            else {
+              if (res) ctx.log(`[ecs service ${arnName(arn)}] ${res.failures?.map(f => f.reason).join(', ') || '상세 응답 없음'}`);
+              services.push({ clusterName: name, service: { serviceArn: arn, serviceName: arnName(arn), status: 'DETAIL_UNAVAILABLE' } });
+            }
+          }
         }),
       );
     }),
@@ -125,12 +139,45 @@ async function run(ctx: CollectorContext) {
     }),
   );
 
+  // Host/bridge tasks use the EC2 host network. Read runtime membership,
+  // never copy the VPC of an arbitrary sibling service in the cluster.
+  const runtime = new Map<string, { vpcs: Set<string>; hosts: Set<string>; complete: boolean }>();
+  for (const c of clusters) {
+    const candidates = services.filter(s => s.clusterName === c.clusterName && !s.service.networkConfiguration?.awsvpcConfiguration && (s.service.runningCount ?? 0) > 0);
+    if (!candidates.length) continue;
+    const arns = await attempt(ctx, `ecs running tasks ${c.clusterName}`, () => collect(paginateListTasks({ client: ecs }, { cluster: c.clusterArn, desiredStatus: 'RUNNING' }), p => p.taskArns));
+    const taskResults = await Promise.all(chunk(arns ?? [], 100).map(batch => attempt(ctx, 'ecs describe tasks', () => ecs.send(new DescribeTasksCommand({ cluster: c.clusterArn, tasks: batch })))));
+    for (const result of taskResults) if (result?.failures?.length) ctx.log('[ecs tasks] 일부 태스크 상세 미확인');
+    const tasks = taskResults.flatMap(r => r?.tasks ?? []);
+    const containers = [...new Set(tasks.map(t => t.containerInstanceArn).filter((id): id is string => Boolean(id)))];
+    const ciResults = await Promise.all(chunk(containers, 100).map(batch => attempt(ctx, 'ecs container instances', () => ecs.send(new DescribeContainerInstancesCommand({ cluster: c.clusterArn, containerInstances: batch })))));
+    for (const result of ciResults) if (result?.failures?.length) ctx.log('[ecs container instances] 일부 호스트 상세 미확인');
+    const hostByContainer = new Map(ciResults.flatMap(r => r?.containerInstances ?? []).map(i => [i.containerInstanceArn, i.ec2InstanceId]));
+    const ids = [...new Set([...hostByContainer.values()].filter((id): id is string => Boolean(id)))];
+    const hosts = await Promise.all(chunk(ids, 100).map(batch => attempt(ctx, 'ecs host placement', () => ec2.send(new DescribeInstancesCommand({ InstanceIds: batch })))));
+    const vpcByHost = new Map(hosts.flatMap(r => r?.Reservations ?? []).flatMap(r => r.Instances ?? []).map(i => [i.InstanceId, i.VpcId]));
+    for (const { service } of candidates) {
+      const own = tasks.filter(t => t.group === `service:${service.serviceName}`);
+      const hostIds = own.map(t => hostByContainer.get(t.containerInstanceArn));
+      const vpcs = hostIds.map(id => vpcByHost.get(id));
+      runtime.set(`${c.clusterName}/${service.serviceName}`, {
+        hosts: new Set(hostIds.filter((id): id is string => Boolean(id))),
+        vpcs: new Set(vpcs.filter((id): id is string => Boolean(id))),
+        complete: Boolean(arns) && own.length >= (service.runningCount ?? 0) && own.length > 0 && vpcs.every(Boolean),
+      });
+    }
+  }
+
   for (const { clusterName, service: s } of services) {
     if (!s.serviceName) continue;
     const nativeId = `${clusterName}/${s.serviceName}`;
     const id = nid('ecs-service', nativeId);
     const net = s.networkConfiguration?.awsvpcConfiguration;
-    const vpcId = (net?.subnets ?? []).map((sn) => vpcBySubnet.get(sn)).find(Boolean);
+    const placement = runtime.get(nativeId);
+    const configuredVpcs = (net?.subnets ?? []).map(sn => vpcBySubnet.get(sn));
+    const vpcs = net ? new Set(configuredVpcs.filter((v): v is string => Boolean(v))) : placement?.vpcs ?? new Set<string>();
+    const complete = net ? configuredVpcs.length > 0 && configuredVpcs.every(Boolean) : placement?.complete;
+    const vpcId = complete && vpcs.size === 1 ? [...vpcs][0] : undefined;
     const desired = s.desiredCount ?? 0;
     const running = s.runningCount ?? 0;
     const deployments = s.deployments ?? [];
@@ -157,8 +204,8 @@ async function run(ctx: CollectorContext) {
       arn: s.serviceArn,
       region: ctx.region,
       parentId: vpcId ? nid('vpc', vpcId) : undefined,
-      status: serviceStatus(desired, running, deployments.length, s.status),
-      statusLabel: s.status === 'ACCESS_DENIED' ? '접근 거부' : `${running}/${desired} 실행`,
+      status: s.status === 'DETAIL_UNAVAILABLE' ? 'unknown' : serviceStatus(desired, running, deployments.length, s.status),
+      statusLabel: s.status === 'DETAIL_UNAVAILABLE' ? '상세 조회 실패' : `${running}/${desired} 실행`,
       props: {
         상태: s.status ?? null,
         '희망/실행 작업': `${desired} / ${running}`,
@@ -167,6 +214,10 @@ async function run(ctx: CollectorContext) {
         '배포 상태': primary?.rolloutState ?? (deployments.length > 1 ? `배포 ${deployments.length}개 진행` : null),
         '플랫폼 버전': s.platformVersion ?? null,
         클러스터: clusterName,
+        '네트워크 모드': td?.networkMode ?? (net ? 'awsvpc' : null),
+        '배치 근거': vpcId ? (net ? '서비스 설정 서브넷' : '실행 태스크의 EC2 호스트') : vpcs.size > 1 ? '여러 VPC에 걸친 실행 위치' : '위치 미확인 · 실행 태스크 없음 또는 조회 불완전',
+        '확인된 VPC': [...vpcs].join(', ') || null,
+        '설정 서브넷': net?.subnets?.join(', ') || null,
         '대기 작업': s.pendingCount ?? 0,
         '태스크 CPU/메모리': td?.cpu || td?.memory ? `${td?.cpu ?? '-'} / ${td?.memory ?? '-'}` : null,
         컨테이너: containers.map((c) => c.name).filter(Boolean).join(', ') || null,
@@ -177,6 +228,8 @@ async function run(ctx: CollectorContext) {
       refs,
     });
     edges.push(edge('member', nid('ecs-cluster', clusterName), id));
+    for (const host of placement?.hosts ?? []) edges.push(edge('attached', id, nid('ec2-instance', host), { label: '실행 호스트' }));
+    if (!vpcId) for (const vpc of vpcs) edges.push(edge('attached', id, nid('vpc', vpc), { label: '확인된 실행 VPC' }));
     for (const sg of net?.securityGroups ?? []) edges.push(edge('attached', id, nid('security-group', sg)));
     if (td?.taskRoleArn) edges.push(edge('assumes', id, nid('iam-role', arnName(td.taskRoleArn))));
     for (const lb of s.loadBalancers ?? []) {

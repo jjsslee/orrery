@@ -32,6 +32,7 @@ export function assembleGraph(
       existing.arn ??= n.arn;
       existing.az ??= n.az;
       existing.tags = existing.tags || n.tags ? { ...n.tags, ...existing.tags } : undefined;
+      if (n.relations?.length) existing.relations = [...(existing.relations ?? []), ...n.relations];
       if (n.refs?.length) existing.refs = [...new Set([...(existing.refs ?? []), ...n.refs])];
       if (STATUS_RANK[n.status] > STATUS_RANK[existing.status]) {
         existing.status = n.status;
@@ -41,7 +42,11 @@ export function assembleGraph(
   }
 
   // Drop parents that do not exist (keeps the client-side tree consistent)
-  for (const n of nodes.values()) if (n.parentId && !nodes.has(n.parentId)) delete n.parentId;
+  let missingParents = 0;
+  for (const n of nodes.values()) if (n.parentId && !nodes.has(n.parentId)) {
+    missingParents++;
+    n.props['소속 조회'] = `부모 자원 미수집: ${n.parentId}`;
+  }
 
   const edges = new Map<string, ResourceEdge>();
   let dropped = 0;
@@ -52,11 +57,11 @@ export function assembleGraph(
   };
   for (const out of outputs) for (const e of out.edges) addEdge(e);
 
-  for (const e of resolveRefs(nodes)) addEdge(e);
+  for (const e of resolveRefs(nodes, meta)) addEdge(e);
   applyAlarms(nodes, outputs.flatMap((o) => o.alarms ?? []));
 
   const all = [...nodes.values()];
-  for (const n of all) delete n.refs; // internal only
+  for (const n of all) { delete n.refs; delete n.relations; } // internal only
 
   const collectedAt = new Date().toISOString();
   return {
@@ -67,7 +72,7 @@ export function assembleGraph(
     collectedAt,
     nodes: all,
     edges: [...edges.values()],
-    reports: [...reports, { collector: 'assemble', ok: true, durationMs: 0, nodes: all.length, edges: edges.size, error: dropped ? `연결 대상이 수집되지 않아 제외된 관계 ${dropped}개` : undefined }],
+    reports: [...reports, { collector: 'assemble', ok: true, durationMs: 0, nodes: all.length, edges: edges.size, error: dropped || missingParents ? `미수집 연결 대상 ${dropped}개 · 미수집 소속 ${missingParents}개` : undefined }],
   };
 }
 
@@ -110,18 +115,13 @@ function buildIndex(nodes: Map<string, ResourceNode>): RefIndex {
 }
 
 function kindFor(source: ResourceNode, target: ResourceNode): EdgeKind {
-  if (['waf-acl', 'acm-certificate', 'cloudmap-service', 'cloudmap-namespace'].includes(target.type)) return 'attached';
+  if (source.type === 'cloudfront' && ['acm-certificate', 'waf-acl'].includes(target.type)) return 'attached';
   if (source.type === 'cloudfront') return 'origin';
   if (source.type === 'route53-zone') return 'resolves';
-  if (target.type === 'kms-key') return 'encrypts';
-  if (target.type === 'iam-role') return 'assumes';
-  if (['lambda', 'step-function', 'api-gateway', 'appsync-api', 'load-balancer', 'ecs-service'].includes(target.type)) return 'invokes';
-  if (['sqs-queue', 'sns-topic', 'eventbridge-rule'].includes(target.type)) return 'publishes';
-  if (['subnet', 'vpc', 'security-group'].includes(target.type)) return 'attached';
-  return 'reads';
+  return 'references';
 }
 
-function resolveRefs(nodes: Map<string, ResourceNode>): ResourceEdge[] {
+function resolveRefs(nodes: Map<string, ResourceNode>, meta: { account: string; region: string }): ResourceEdge[] {
   const idx = buildIndex(nodes);
   const out: ResourceEdge[] = [];
   const link = (source: ResourceNode, target: ResourceNode | undefined, label?: string) => {
@@ -137,30 +137,53 @@ function resolveRefs(nodes: Map<string, ResourceNode>): ResourceEdge[] {
     for (const raw of n.refs) {
       const ref = raw.trim();
       if (!ref) continue;
-      if (ref.startsWith('arn:')) { link(n, idx.byArn.get(ref) ?? matchArnByName(ref, idx)); continue; }
-      if (/^https?:\/\/sqs\./.test(ref)) { link(n, idx.byUrl.get(ref) ?? idx.byName.get(`sqs-queue:${ref.split('/').pop()}`)); continue; }
+      if (ref.startsWith('arn:')) { const exact = idx.byArn.get(ref); const fallback = exact ? undefined : matchArnByName(ref, idx, meta); link(n, exact ?? (fallback && (!fallback.arn || ref.startsWith(fallback.arn + ':') || ref.startsWith(fallback.arn + '/') || String(fallback.props['_listenerArns'] ?? '').split(',').includes(ref)) ? fallback : undefined)); continue; }
+      if (/^https?:\/\/sqs\./.test(ref)) { link(n, idx.byUrl.get(ref)); continue; }
       if (/^https?:\/\//.test(ref)) {
         const host = ref.replace(/^https?:\/\//, '').split('/')[0].toLowerCase();
         link(n, idx.byDns.get(host) ?? matchHostSuffix(host, idx));
         continue;
       }
+      if (idx.byDns.has(ref.toLowerCase().replace(/\.$/, ''))) { link(n, idx.byDns.get(ref.toLowerCase().replace(/\.$/, ''))); continue; }
       if (/\.amazonaws\.com$/i.test(ref) || /\.cloudfront\.net$/i.test(ref)) { link(n, idx.byDns.get(ref.toLowerCase()) ?? matchHostSuffix(ref.toLowerCase(), idx)); continue; }
       if (/\.dkr\.ecr\./.test(ref)) {
         const repo = ref.split('/').slice(1).join('/').split(/[:@]/)[0];
-        link(n, idx.byName.get(`ecr-repository:${repo}`));
+        const registry = ref.match(/^(\d+)\.dkr\.ecr\.([^.]+)\.amazonaws\.com(?:\.cn)?\//);
+        if (registry?.[1] === meta.account && registry?.[2] === meta.region) link(n, idx.byName.get(`ecr-repository:${repo}`));
         continue;
       }
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) { link(n, idx.byName.get(`kms-key:${ref}`)); continue; }
       if (ref.startsWith('alias/')) { link(n, idx.byName.get(`kms-key:${ref}`)); continue; }
       // Plain names: exact match on name-addressable types (longest name first to avoid prefixes)
       const exact = idx.names.filter((e) => e.name === ref);
-      for (const e of exact) link(n, e.node);
+      if (exact.length === 1) link(n, exact[0].node);
+      else if (exact.length > 1) n.props['모호한 설정 참조'] = Number(n.props['모호한 설정 참조'] ?? 0) + 1;
     }
+  }
+  for (const n of [...nodes.values()]) for (const rel of n.relations ?? []) {
+    const ref = rel.ref.trim();
+    if (!ref) continue;
+    const host = ref.replace(/^https?:\/\//, '').split('/')[0].toLowerCase().replace(/\.$/, '');
+    let target = idx.byArn.get(ref) ?? nodes.get(ref) ?? idx.byDns.get(host);
+    if (!target && !ref.startsWith('arn:')) target = matchHostSuffix(host, idx);
+    if (!target) {
+      const id = nid('configuration-target', ref);
+      target = nodes.get(id) ?? { id, nativeId: ref, name: ref, type: 'configuration-target', category: 'network', region: 'unknown', status: 'unknown', statusLabel: '구성에서 확인 · 자원 상세 미수집', props: { 식별자: ref, '확인 범위': '원본 설정의 연결 대상 · 실제 자원 상세/통신 성공은 미확인' } };
+      nodes.set(id, target);
+    }
+    out.push(edge(rel.kind, n.id, target.id, { label: rel.label }));
   }
   return out;
 }
 
-function matchArnByName(arn: string, idx: RefIndex): ResourceNode | undefined {
+function matchArnByName(arn: string, idx: RefIndex, meta: { account: string; region: string }): ResourceNode | undefined {
+  const parts = arn.split(':');
+  if (parts[1] !== 'aws' || (parts[3] && parts[3] !== meta.region) || (parts[4] && parts[4] !== meta.account)) return undefined;
+  // Resolve only structurally defined subresources, never a foreign same-name ARN.
+  const qualified = [...idx.byArn.entries()].filter(([base]) => arn.startsWith(`${base}:`) || arn.startsWith(`${base}/`));
+  if (qualified.length === 1 && ['lambda', 'dynamodb-table', 's3-bucket'].includes(qualified[0][1].type)) return qualified[0][1];
+  const listener = [...idx.byArn.values()].find(n => typeof n.props['_listenerArns'] === 'string' && n.props['_listenerArns'].split(',').includes(arn));
+  if (listener) return listener;
   const service = arn.split(':')[2];
   const resource = arn.split(':').slice(5).join(':');
   const last = resource.split(/[/:]/).pop() ?? resource;
@@ -187,7 +210,7 @@ function matchHostSuffix(host: string, idx: RefIndex): ResourceNode | undefined 
   if (s3) return idx.byName.get(`s3-bucket:${s3[1]}`);
   // API Gateway: <api-id>.execute-api.<region>.amazonaws.com
   const api = host.match(/^([a-z0-9]+)\.execute-api\./);
-  if (api) return [...idx.byDns.values()].find((n) => n.type === 'api-gateway' && n.nativeId === api[1]);
+  if (api) return [...idx.byDns.values()].find((n) => n.type === 'api-gateway' && n.nativeId === api[1] && host.includes(`.execute-api.${n.region}.`));
   return undefined;
 }
 

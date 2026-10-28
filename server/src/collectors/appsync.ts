@@ -31,9 +31,9 @@ const DS_LABEL: Record<string, string> = {
 };
 
 /** Identifiers a data source points at; the assembler turns them into edges. */
-export function dataSourceRefs(ds: DataSource): string[] {
+export function dataSourceRefs(ds: DataSource, account?: string): string[] {
   const refs = [
-    ds.dynamodbConfig?.tableName,
+    account && ds.dynamodbConfig?.awsRegion && ds.dynamodbConfig.tableName ? `arn:aws:dynamodb:${ds.dynamodbConfig.awsRegion}:${account}:table/${ds.dynamodbConfig.tableName}` : ds.dynamodbConfig?.tableName,
     ds.lambdaConfig?.lambdaFunctionArn,
     ds.serviceRoleArn,
     ds.httpConfig?.endpoint,
@@ -91,7 +91,7 @@ async function run(ctx: CollectorContext) {
       const cfg = api.eventConfig;
       const providers = cfg?.authProviders ?? [];
       const refs = [
-        ...dataSources.flatMap(dataSourceRefs),
+        ...dataSources.flatMap(ds => dataSourceRefs(ds, ctx.account)),
         ...providers.map((p) => p.lambdaAuthorizerConfig?.authorizerUri),
         ...providers.map((p) => p.cognitoConfig?.userPoolId),
         cfg?.logConfig?.cloudWatchLogsRoleArn,
@@ -106,7 +106,7 @@ async function run(ctx: CollectorContext) {
         nativeId: apiId,
         arn: api.apiArn,
         region: ctx.region,
-        status: 'healthy',
+        status: 'unknown',
         statusLabel: 'Events',
         props: {
           유형: 'Events',
@@ -134,7 +134,7 @@ async function run(ctx: CollectorContext) {
       const dataSources = await dataSourcesFor(apiId);
       const extra = api.additionalAuthenticationProviders ?? [];
       const refs = [
-        ...dataSources.flatMap(dataSourceRefs),
+        ...dataSources.flatMap(ds => dataSourceRefs(ds, ctx.account)),
         api.userPoolConfig?.userPoolId,
         api.lambdaAuthorizerConfig?.authorizerUri,
         api.logConfig?.cloudWatchLogsRoleArn,
@@ -151,7 +151,7 @@ async function run(ctx: CollectorContext) {
         nativeId: apiId,
         arn: api.arn,
         region: ctx.region,
-        status: 'healthy',
+        status: 'unknown',
         statusLabel: api.apiType === 'MERGED' ? 'GraphQL 병합' : 'GraphQL',
         props: {
           유형: api.apiType === 'MERGED' ? 'GraphQL (병합)' : 'GraphQL',

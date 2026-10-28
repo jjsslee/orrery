@@ -19,7 +19,8 @@ async function run(ctx: CollectorContext) {
       if (!fs.FileSystemId) return;
       const id = fs.FileSystemId;
       const tags = tagsToRecord(fs.Tags);
-      const targets = (await attempt(ctx, `efs mount targets ${id}`, () => collect(paginateDescribeMountTargets({ client: efs }, { FileSystemId: id }), (p) => p.MountTargets))) ?? [];
+      const targetsResult = await attempt(ctx, `efs mount targets ${id}`, () => collect(paginateDescribeMountTargets({ client: efs }, { FileSystemId: id }), (p) => p.MountTargets));
+      const targets = targetsResult ?? [];
       const sgs = new Set<string>();
       await Promise.all(
         targets.map(async (mt) => {
@@ -41,6 +42,7 @@ async function run(ctx: CollectorContext) {
         status: statusFromState(fs.LifeCycleState),
         statusLabel: fs.LifeCycleState,
         props: {
+          '배치 근거': !targetsResult ? '위치 미확인 · 마운트 타깃 조회 실패' : targets.length ? '마운트 타깃의 VPC 연결 · 파일 시스템은 리전 자원' : '마운트 타깃 없음',
           이름: fs.Name ?? null,
           상태: fs.LifeCycleState ?? null,
           크기: fmtBytes(fs.SizeInBytes?.Value),

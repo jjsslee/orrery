@@ -11,7 +11,7 @@ const node = (partial: Partial<ResourceNode> & Pick<ResourceNode, 'id' | 'type' 
   ...partial,
 });
 
-test('refs resolve ARNs, SQS URLs, S3 hosts, ECR images and plain names into typed edges', () => {
+test('configuration identifiers resolve as references without assuming access or execution', () => {
   const lambda = node({
     id: 'lambda:orders-api', type: 'lambda', category: 'compute', nativeId: 'orders-api',
     refs: [
@@ -38,12 +38,12 @@ test('refs resolve ARNs, SQS URLs, S3 hosts, ECR images and plain names into typ
   const graph = assembleGraph([{ nodes, edges: [] }], [], { account: '000000000000', region: 'ap-northeast-2', source: 'test' });
   const kinds = new Map(graph.edges.map((e) => [`${e.source}>${e.target}`, e.kind]));
 
-  assert.equal(kinds.get('lambda:orders-api>dynamodb-table:orders'), 'reads');
-  assert.equal(kinds.get('lambda:orders-api>sqs-queue:orders-events'), 'publishes');
-  assert.equal(kinds.get('lambda:orders-api>s3-bucket:assets-bucket'), 'reads');
-  assert.equal(kinds.get('lambda:orders-api>iam-role:orders-lambda-role'), 'assumes');
-  assert.equal(kinds.get('lambda:orders-api>ecr-repository:orders/api'), 'reads');
-  assert.equal(kinds.get('kms-key:11111111-2222-3333-4444-555555555555>lambda:orders-api'), 'encrypts', 'KMS edges point from key to resource');
+  assert.equal(kinds.get('lambda:orders-api>dynamodb-table:orders'), 'references');
+  assert.equal(kinds.get('lambda:orders-api>sqs-queue:orders-events'), 'references');
+  assert.equal(kinds.get('lambda:orders-api>s3-bucket:assets-bucket'), 'references');
+  assert.equal(kinds.get('lambda:orders-api>iam-role:orders-lambda-role'), 'references');
+  assert.equal(kinds.get('lambda:orders-api>ecr-repository:orders/api'), 'references');
+  assert.equal(kinds.get('lambda:orders-api>kms-key:11111111-2222-3333-4444-555555555555'), 'references', 'a free-text key identifier alone is not encryption evidence');
   assert.equal(kinds.get('cloudfront:E123>s3-bucket:assets-bucket'), 'origin');
   assert.equal(kinds.get('cloudfront:E123>load-balancer:arn:lb'), 'origin');
   assert.equal([...kinds.keys()].some((k) => k.includes('missing-fn')), false, 'unresolved refs produce no edge');
@@ -70,9 +70,34 @@ test('alarms attach to nodes by dimension and lift status to critical', () => {
   assert.equal(lb.alarms, undefined);
 });
 
-test('dangling edges and missing parents are dropped', () => {
+test('dangling edges are reported and missing parent identity is preserved', () => {
   const nodes = [node({ id: 'subnet:s-1', type: 'subnet', category: 'network', nativeId: 's-1', parentId: 'vpc:missing' })];
   const graph = assembleGraph([{ nodes, edges: [{ id: 'x', source: 'subnet:s-1', target: 'nat-gateway:nope', kind: 'routes' }] }], [], { account: 'a', region: 'r', source: 's' });
   assert.equal(graph.edges.length, 0);
-  assert.equal(graph.nodes[0].parentId, undefined);
+  assert.equal(graph.nodes[0].parentId, 'vpc:missing');
+  assert.match(graph.reports[0].error ?? '', /미수집 소속 1개/);
+});
+
+test('foreign ARN and ambiguous plain names never bind to local resources', () => {
+  const nodes = [node({ id: 'lambda:source', type: 'lambda', category: 'compute', nativeId: 'source', refs: ['arn:aws:sqs:us-west-2:111111111111:orders', 'orders'] }), node({ id: 'sqs-queue:orders', type: 'sqs-queue', category: 'integration', nativeId: 'orders', arn: 'arn:aws:sqs:ap-northeast-2:000000000000:orders' }), node({ id: 's3-bucket:orders', type: 's3-bucket', category: 'storage', nativeId: 'orders' })];
+  const g = assembleGraph([{ nodes, edges: [] }], [], { account: '000000000000', region: 'ap-northeast-2', source: 'test' });
+  assert.equal(g.edges.length, 0);
+});
+
+test('custom DNS and exact listener identifiers resolve without name guessing', () => {
+  const listener = 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:listener/app/demo/abc/def';
+  const nodes = [node({ id: 'lambda:source', type: 'lambda', category: 'compute', nativeId: 'source', refs: ['service.example.test', listener] }), node({ id: 'load-balancer:demo', type: 'load-balancer', category: 'network', nativeId: 'demo', arn: 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/demo/abc', props: { DNS: 'service.example.test', _listenerArns: listener } })];
+  const g = assembleGraph([{ nodes, edges: [] }], [], { account: '000000000000', region: 'ap-northeast-2', source: 'test' });
+  assert.equal(g.edges.length, 1);
+  assert.equal(g.edges[0].target, 'load-balancer:demo');
+  assert.equal(g.edges[0].kind, 'references');
+});
+
+test('typed configuration relationships preserve unresolved foreign targets and distinct paths', () => {
+  const source = node({ id: 'cloudfront:cdn', type: 'cloudfront', category: 'network', nativeId: 'cdn', relations: [{ ref: 'external.example.test', kind: 'origin', label: '/a/*' }, { ref: 'external.example.test', kind: 'origin', label: '/b/*' }] });
+  const g = assembleGraph([{ nodes: [source], edges: [] }], [], { account: '000000000000', region: 'ap-northeast-2', source: 'test' });
+  assert.equal(g.edges.length, 2);
+  assert.equal(g.nodes.filter(n => n.type === 'configuration-target').length, 1);
+  assert.ok(g.nodes.every(n => n.relations === undefined));
+  assert.ok(g.edges.every(e => e.kind === 'origin'));
 });

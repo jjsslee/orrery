@@ -71,6 +71,7 @@ async function securityGroups(ctx: CollectorContext, nodes: ResourceNode[], edge
     nodes.push({
       id: nid('security-group', id),
       type: 'security-group',
+      parentId: g.VpcId ? nid('vpc', g.VpcId) : undefined,
       category: 'security',
       name: g.GroupName && g.GroupName !== 'default' ? g.GroupName : nameFromTags(tags, g.GroupName ?? id),
       nativeId: id,

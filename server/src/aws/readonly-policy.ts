@@ -75,10 +75,14 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'DescribeClustersCommand',
     'DescribeServicesCommand',
     'DescribeTaskDefinitionCommand',
+    'DescribeTasksCommand',
+    'DescribeContainerInstancesCommand',
+    'ListTasksCommand',
     'ListClustersCommand',
     'ListServicesCommand',
   ]),
   EFSClient: new Set([
+    'DescribeAccessPointsCommand',
     'DescribeFileSystemsCommand',
     'DescribeMountTargetSecurityGroupsCommand',
     'DescribeMountTargetsCommand',
@@ -96,6 +100,7 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'ListTagsForResourceCommand',
   ]),
   ElasticLoadBalancingV2Client: new Set([
+    'DescribeRulesCommand',
     'DescribeListenersCommand',
     'DescribeLoadBalancersCommand',
     'DescribeTagsCommand',
@@ -109,6 +114,7 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'ListTargetsByRuleCommand',
   ]),
   IAMClient: new Set([
+    'GetInstanceProfileCommand',
     'ListRoleTagsCommand',
     'ListRolesCommand',
   ]),
@@ -119,11 +125,18 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'ListResourceTagsCommand',
   ]),
   LambdaClient: new Set([
+    'GetFunctionCommand',
     'ListEventSourceMappingsCommand',
     'ListFunctionsCommand',
     'ListTagsCommand',
   ]),
   OpenSearchServerlessClient: new Set([
+    'BatchGetVpcEndpointCommand',
+    'GetSecurityPolicyCommand',
+    'GetAccessPolicyCommand',
+    'ListSecurityPoliciesCommand',
+    'ListAccessPoliciesCommand',
+    'ListVpcEndpointsCommand',
     'BatchGetCollectionCommand',
     'ListCollectionsCommand',
     'ListTagsForResourceCommand',
@@ -134,6 +147,7 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'ListTagsForResourceCommand',
   ]),
   Route53Client: new Set([
+    'GetHostedZoneCommand',
     'ListHostedZonesCommand',
     'ListResourceRecordSetsCommand',
     'ListTagsForResourcesCommand',
@@ -172,6 +186,7 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'ListSecretsCommand',
   ]),
   ServiceDiscoveryClient: new Set([
+    'ListInstancesCommand',
     'GetNamespaceCommand',
     'GetServiceCommand',
     'ListNamespacesCommand',

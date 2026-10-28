@@ -1,3 +1,4 @@
+import { allowClipboardWrite } from './permissions';
 /**
  * The Orrery desktop app. Starts the bundled server (server.cjs, see
  * server/src/runtime.ts) as a utility process and shows the page it serves in
@@ -78,8 +79,11 @@ function open(url: string): BrowserWindow {
     event.preventDefault();
     openOutside(event.url);
   });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(contents === window.webContents && allowClipboardWrite(permission, origin, contents.getURL(), details.requestingUrl, details.isMainFrame));
+  });
+  window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) =>
+    contents === window.webContents && allowClipboardWrite(permission, origin, contents.getURL(), details.requestingUrl, details.isMainFrame));
 
   void window.loadURL(url);
   return window;

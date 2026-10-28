@@ -1,6 +1,7 @@
 import { OpenSearchServerlessClient, BatchGetCollectionCommand, ListTagsForResourceCommand, paginateListCollections } from '@aws-sdk/client-opensearchserverless';
 import type { Collector } from './types.ts';
-import type { ResourceNode } from '@orrery/shared';
+import { collectOpenSearchNetwork } from './opensearch-network.ts';
+import type { ResourceEdge, ResourceNode } from '@orrery/shared';
 import { nid } from './ids.ts';
 import { attempt, collect, hostOf, lowerTags } from './util.ts';
 
@@ -24,6 +25,8 @@ export const opensearchCollector: Collector = {
         tags: lowerTags(tags?.tags), refs: d?.kmsKeyArn ? [d.kmsKeyArn] : [],
       });
     }));
-    return { nodes, edges: [] };
+    const edges: ResourceEdge[] = [];
+    await collectOpenSearchNetwork(ctx, nodes, edges);
+    return { nodes, edges };
   },
 };

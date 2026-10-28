@@ -79,7 +79,15 @@ const HUB_TYPES = new Set<ResourceType>([
 ]);
 const STATUS_RANK: Record<Status, number> = { unknown: 0, inactive: 1, healthy: 2, warning: 3, critical: 4 };
 
-export const laneId = (c: Category) => `lane:${c}`;
+export const laneId = (c: Category, scope = 'regional') => `lane:${c}:${scope}`;
+const NETWORK_SCOPED = new Set<ResourceType>(['ecs-service', 'ec2-instance', 'autoscaling-group', 'eks-cluster', 'rds-instance', 'rds-cluster', 'elasticache', 'efs', 'security-group', 'load-balancer', 'nat-gateway', 'vpc-endpoint', 'ip-target', 'configuration-target', 'codebuild-project']);
+function scopeOf(n: ResourceNode): string {
+  if (!n.parentId && n.props['배치 근거'] === '사용자 VPC 연결 없음') return 'regional';
+  if (n.parentId || NETWORK_SCOPED.has(n.type) || n.statusLabel?.includes('조회 실패') || n.statusLabel === '접근 거부') return 'unknown';
+  if (n.region === 'global' || ['cloudfront', 'route53-zone', 'iam-role'].includes(n.type)) return 'global';
+  return 'regional';
+}
+export const sceneStructureKey = (scene: Scene): string => JSON.stringify([scene.nodes.map(n => [n.id, n.parentId, n.kind, n.width, n.height]), scene.edges.map(e => [e.id, e.source, e.target])]);
 export const aggregateId = (parentId: string, type: ResourceType) => `agg:${parentId}:${type}`;
 
 function typeVisible(t: ResourceType, input: SceneInput): boolean {
@@ -105,6 +113,7 @@ export function buildScene(input: SceneInput): Scene {
 
   // 0. edges with target groups folded unless shown (LB → TG → target becomes LB → target)
   const rawEdges: ResourceEdge[] = [];
+  const unresolvedGroups = new Set<string>();
   if (!overlays.targetGroups) {
     const tgIn = new Map<string, ResourceEdge[]>(); // tg → lb edges
     const tgOut = new Map<string, ResourceEdge[]>(); // tg → target edges
@@ -116,8 +125,9 @@ export function buildScene(input: SceneInput): Scene {
     }
     for (const [tgId, ins] of tgIn) {
       const tg = byId.get(tgId);
+      if (!tgOut.get(tgId)?.length) { unresolvedGroups.add(tgId); rawEdges.push(...ins); }
       for (const inE of ins) for (const outE of tgOut.get(tgId) ?? []) {
-        rawEdges.push({ id: `targets|${inE.source}|${outE.target}|${tgId}`, source: inE.source, target: outE.target, kind: 'targets', label: tg?.name, status: outE.status, props: outE.props });
+        rawEdges.push({ id: `targets|${inE.source}|${outE.target}|${tgId}`, source: inE.source, target: outE.target, kind: 'targets', label: [inE.label, tg?.name, outE.label].filter(Boolean).join(' · '), status: [inE.status, outE.status, tg?.status].filter((v): v is Status => Boolean(v)).sort((a, b) => STATUS_RANK[b] - STATUS_RANK[a])[0], props: outE.props });
       }
     }
   } else {
@@ -132,7 +142,7 @@ export function buildScene(input: SceneInput): Scene {
 
   // 1. type/category/overlay visibility
   let visible = new Set<string>();
-  for (const n of graph.nodes) if (typeVisible(n.type, input)) visible.add(n.id);
+  for (const n of graph.nodes) if (typeVisible(n.type, input) || unresolvedGroups.has(n.id)) visible.add(n.id);
 
   // 2. narrowing: tag filters, then search. Each keeps its matches, their ancestors and
   //    (optionally) 1-hop neighbours with their ancestors. Matches never fold into aggregates.
@@ -148,7 +158,7 @@ export function buildScene(input: SceneInput): Scene {
     const keep = new Set<string>();
     const addWithAncestors = (id: string) => {
       let cur: ResourceNode | undefined = byId.get(id);
-      while (cur) { keep.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
+      while (cur && !keep.has(cur.id)) { keep.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
     };
     for (const id of hits) {
       addWithAncestors(id);
@@ -166,7 +176,8 @@ export function buildScene(input: SceneInput): Scene {
   const ghosts = new Set<string>();
   const withAncestors = (id: string) => {
     let cur: ResourceNode | undefined = byId.get(id);
-    while (cur) { visible.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) { seen.add(cur.id); visible.add(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
   };
   if (selectedId && byId.has(selectedId)) {
     if (!visible.has(selectedId)) withAncestors(selectedId);
@@ -177,6 +188,9 @@ export function buildScene(input: SceneInput): Scene {
       withAncestors(nb);
     }
   }
+
+  // Keep containment plates even when their category/type is filtered out.
+  for (const id of [...visible]) withAncestors(id);
 
   // 3. edges between visible nodes; a ghost only connects to the selected node
   const edges = rawEdges.filter((e) => {
@@ -201,7 +215,7 @@ export function buildScene(input: SceneInput): Scene {
   const parentOf = (n: ResourceNode): string | undefined => {
     if (n.parentId && visible.has(n.parentId) && isPlate(byId.get(n.parentId)!)) return n.parentId;
     if (isPlate(n)) return undefined; // top-level plate
-    return laneId(n.category);
+    return laneId(n.category, scopeOf(n));
   };
   const children = new Map<string, ResourceNode[]>(); // parent (or 'root') → nodes
   for (const id of visible) {
@@ -289,10 +303,12 @@ export function buildScene(input: SceneInput): Scene {
   // Lane members
   for (const [key, kids] of children) {
     if (!key.startsWith('lane:')) continue;
-    const category = key.slice(5) as Category;
+    const [, rawCategory, scope] = key.split(':');
+    const category = rawCategory as Category;
+    const scopeLabel = scope === 'global' ? '글로벌 자원' : scope === 'unknown' ? '위치 미확인·복수 범위' : '리전·논리 자원';
     if (!kids.length) continue;
     lanesUsed.add(category);
-    sceneNodes.set(key, { id: key, kind: 'plate', lane: { category, label: `${CATEGORY_LABEL[category]} · 리전 서비스` }, depth: 0, dim: false, traffic: 0, width: 0, height: 0 });
+    sceneNodes.set(key, { id: key, kind: 'plate', lane: { category, label: `${CATEGORY_LABEL[category]} · ${scopeLabel}` }, depth: 0, dim: false, traffic: 0, width: 0, height: 0 });
     placeChildren(key, key, 1, true);
   }
 
@@ -302,9 +318,9 @@ export function buildScene(input: SceneInput): Scene {
     const s = redirect.get(e.source) ?? e.source;
     const t = redirect.get(e.target) ?? e.target;
     if (s === t || !sceneNodes.has(s) || !sceneNodes.has(t)) continue;
-    const key = `${e.kind}|${s}|${t}`;
-    const live = LIVE_EDGE_KINDS.has(e.kind);
-    const traffic = live ? Math.max(trafficOf(e.source), trafficOf(e.target), e.traffic ?? 0) : 0;
+    const key = `${e.kind}|${s}|${t}|${e.label ?? ''}|${e.status ?? ''}`;
+    const live = LIVE_EDGE_KINDS.has(e.kind) && e.status !== 'inactive' && e.status !== 'critical';
+    const traffic = live ? e.traffic ?? 0 : 0;
     const existing = sceneEdges.get(key);
     if (existing) {
       existing.count += 1;

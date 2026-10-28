@@ -48,6 +48,7 @@ async function run(ctx: CollectorContext) {
         statusLabel: unhealthyGroups ? `노드 그룹 ${unhealthyGroups}개 비정상` : c.status,
         props: {
           상태: c.status ?? null,
+          '배치 근거': '클러스터의 VPC 연결 설정 · 제어 평면의 물리적 위치가 아님',
           버전: c.version ?? null,
           엔드포인트: hostOf(c.endpoint) ?? null,
           '플랫폼 버전': c.platformVersion ?? null,
@@ -62,6 +63,7 @@ async function run(ctx: CollectorContext) {
         tags: c.tags && Object.keys(c.tags).length ? c.tags : undefined,
         refs,
       });
+      for (const group of groups) for (const asg of group.resources?.autoScalingGroups ?? []) if (asg.name) edges.push(edge('member', nid('eks-cluster', c.name), nid('autoscaling-group', asg.name), { label: group.nodegroupName }));
       for (const sg of sgs) edges.push(edge('attached', nid('eks-cluster', c.name), nid('security-group', sg)));
       if (c.roleArn) edges.push(edge('assumes', nid('eks-cluster', c.name), nid('iam-role', arnName(c.roleArn))));
     }),

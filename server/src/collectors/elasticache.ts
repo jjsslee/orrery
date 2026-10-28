@@ -20,8 +20,8 @@ import { attempt, collect, errMsg } from './util.ts';
 function placement(azs: string[], group?: CacheSubnetGroup): { parentId?: string; az?: string } {
   const unique = [...new Set(azs.filter(Boolean))];
   if (unique.length === 1) {
-    const subnet = group?.Subnets?.find((s) => s.SubnetAvailabilityZone?.Name === unique[0] && s.SubnetIdentifier);
-    if (subnet?.SubnetIdentifier) return { parentId: nid('subnet', subnet.SubnetIdentifier), az: unique[0] };
+    const candidates = group?.Subnets?.filter((s) => s.SubnetAvailabilityZone?.Name === unique[0] && s.SubnetIdentifier) ?? [];
+    if (candidates.length === 1) return { parentId: nid('subnet', candidates[0].SubnetIdentifier!), az: unique[0] };
   }
   return { parentId: group?.VpcId ? nid('vpc', group.VpcId) : undefined, az: unique.length === 1 ? unique[0] : undefined };
 }

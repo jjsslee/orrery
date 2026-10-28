@@ -18,7 +18,7 @@ export function Inspector() {
   const select = useStore((s) => s.select);
   const addTagFilter = useStore((s) => s.addTagFilter);
   const locate = useStore((s) => s.locate);
-  const [copied, setCopied] = useState(false);
+  const [copyResult, setCopyResult] = useState<{ id: string; state: 'copied' | 'failed' }>();
   const [tableView, setTableView] = useState(false);
 
   const node = useMemo(() => graph?.nodes.find((n) => n.id === selectedId), [graph, selectedId]);
@@ -44,7 +44,12 @@ export function Inspector() {
   for (const r of relations) grouped.set(r.edge.kind, [...(grouped.get(r.edge.kind) ?? []), r]);
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(node.arn ?? node.nativeId); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { /* ignore */ }
+    try {
+      await navigator.clipboard.writeText(node.arn ?? node.nativeId);
+      const result = { id: node.id, state: 'copied' as const };
+      setCopyResult(result);
+      setTimeout(() => setCopyResult((current) => current === result ? undefined : current), 1200);
+    } catch { setCopyResult({ id: node.id, state: 'failed' }); }
   };
 
   return (
@@ -61,13 +66,15 @@ export function Inspector() {
       <div className="insp-body">
         <div className="insp-status">
           <StatusDot status={node.status} showLabel label={node.statusLabel ? `${STATUS_LABEL[node.status]} · ${node.statusLabel}` : undefined} size={9} />
-          {traffic != null && <span className="insp-traffic" title="같은 유형 자원 대비 상대 처리량"><span className="insp-traffic-bar"><span style={{ width: `${traffic * 100}%` }} /></span>트래픽 {(traffic * 100).toFixed(0)}%</span>}
+          {traffic != null && <span className="insp-traffic" title="같은 유형 자원 대비 상대 처리량"><span className="insp-traffic-bar"><span style={{ width: `${traffic * 100}%` }} /></span>자원 활동 {(traffic * 100).toFixed(0)}%</span>}
         </div>
 
-        <button type="button" className="insp-id mono" onClick={copy} title="클릭해서 복사">
+        <button type="button" className="insp-id mono" onClick={copy} title="클릭해서 복사" aria-label="ARN 또는 자원 ID 복사">
           <span>{node.arn ?? node.nativeId}</span>
-          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copyResult?.id === node.id && copyResult.state === 'copied' ? <Check size={13} /> : <Copy size={13} />}
         </button>
+
+        {copyResult?.id === node.id && <div role="status" className="muted">{copyResult.state === 'copied' ? '복사했습니다.' : '복사하지 못했습니다. 클립보드 권한을 확인하거나 다시 시도해 주세요.'}</div>}
 
         {node.alarms && node.alarms.length > 0 && (
           <section className="insp-section insp-alarms">
@@ -138,7 +145,7 @@ export function Inspector() {
                           {outgoing ? <ArrowRight size={12} className="rel-dir" /> : <ArrowLeft size={12} className="rel-dir" />}
                           <span className={`rel-icon cat-${other.category}`}><TypeIcon type={other.type} size={12} /></span>
                           <span className="rel-name" title={other.name}>{other.name}</span>
-                          {edge.label && <span className="rel-label">{edge.label}</span>}
+                          {edge.label && <span className="rel-label" title={edge.label}>{edge.label}</span>}
                           {edge.status && edge.status !== 'healthy' && <StatusDot status={edge.status} size={6} />}
                         </button>
                         <button type="button" className="rel-locate" title="지도에서 보기" aria-label={`${other.name} 지도에서 보기`} onClick={() => locate(other.id)}><LocateFixed size={12} /></button>

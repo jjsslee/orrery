@@ -202,6 +202,7 @@
 /* edges */
 .fedge { stroke: var(--line-strong); fill: none; stroke-width: 1.3; transition: opacity 200ms, stroke 160ms; }
 .fedge.live { stroke: color-mix(in srgb, var(--ink-2) 42%, transparent); }
+.fedge.k-references { stroke-dasharray: 7 5; stroke: var(--ink-3); }
 .fedge.k-member { stroke-dasharray: 2 5; stroke: var(--ink-4); }
 .fedge.k-attached { stroke: color-mix(in srgb, var(--ink-3) 40%, transparent); }
 .fedge.k-allows { stroke: var(--cat-security); stroke-dasharray: 5 4; opacity: 0.75; }

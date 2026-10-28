@@ -34,6 +34,8 @@ export const TYPE_META: Record<ResourceType, TypeMeta> = {
   'nat-gateway': { label: 'NAT 게이트웨이', short: 'NAT', category: 'network', icon: ArrowLeftRight, keyProp: '퍼블릭 IP' },
   'vpc-endpoint': { label: 'VPC 엔드포인트', short: '엔드포인트', category: 'network', icon: Plug, keyProp: '유형' },
   'load-balancer': { label: '로드 밸런서', short: 'LB', category: 'network', icon: Waypoints, keyProp: '유형' },
+  'configuration-target': { label: '구성 연결 대상', short: '구성 대상', category: 'network', icon: Plug, keyProp: '식별자' },
+  'ip-target': { label: '등록 IP 타깃', short: 'IP 타깃', category: 'network', icon: Target, keyProp: '주소' },
   'target-group': { label: '타깃 그룹', short: 'TG', category: 'network', icon: Target, overlay: 'targetGroups', keyProp: '프로토콜/포트' },
   cloudfront: { label: 'CloudFront', short: 'CloudFront', category: 'network', icon: Orbit, keyProp: '도메인' },
   'api-gateway': { label: 'API Gateway', short: 'API', category: 'network', icon: Braces, keyProp: '유형' },
@@ -93,9 +95,10 @@ export const TYPES_BY_CATEGORY: Record<Category, ResourceType[]> = CATEGORY_ORDE
 }, {} as Record<Category, ResourceType[]>);
 
 export const EDGE_KIND_LABEL: Record<string, string> = {
+  references: '설정 참조',
   attached: '연결',
   routes: '라우팅',
-  targets: '트래픽 전달',
+  targets: '전달 대상',
   invokes: '호출',
   publishes: '발행',
   reads: '접근',

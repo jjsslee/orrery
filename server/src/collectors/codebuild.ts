@@ -59,6 +59,7 @@ async function run(ctx: CollectorContext) {
       status: known ? 'healthy' : 'unknown',
       statusLabel: known ? undefined : '상세 미수집',
       props: {
+        '배치 근거': !known ? '위치 미확인 · 상세 조회 실패' : p.vpcConfig?.vpcId ? '빌드의 VPC 연결 설정' : '사용자 VPC 연결 없음',
         '소스 유형': p.source?.type ?? null,
         '소스 위치': p.source?.location ?? null,
         '환경 이미지': env?.image ?? null,

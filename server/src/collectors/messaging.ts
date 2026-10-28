@@ -19,7 +19,7 @@ import {
 import { SFNClient, DescribeStateMachineCommand, ListTagsForResourceCommand as ListStateMachineTagsCommand, paginateListStateMachines } from '@aws-sdk/client-sfn';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
-import { arnName, arnService, edge, iso, nid, tagsToRecord } from './ids.ts';
+import { isLocalArn, arnName, arnService, edge, iso, nid, tagsToRecord } from './ids.ts';
 import { attempt, collect, countSummary, errMsg, lambdaNameFromArn, lowerTags, truncate } from './util.ts';
 
 /** EventBridge target ARN → node id of a resource we collect (undefined → keep as ref) */
@@ -85,7 +85,7 @@ async function sqs(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
         tags: tagsToRecord(tagRes?.Tags),
         refs: a.KmsMasterKeyId ? [a.KmsMasterKeyId] : undefined,
       });
-      if (dlq) edges.push(edge('routes', nid('sqs-queue', name), nid('sqs-queue', arnName(dlq)), { label: 'DLQ' }));
+      if (dlq && isLocalArn(dlq, ctx)) edges.push(edge('routes', nid('sqs-queue', name), nid('sqs-queue', arnName(dlq)), { label: 'DLQ' }));
     }),
   );
 }
@@ -112,8 +112,8 @@ async function sns(ctx: CollectorContext, nodes: ResourceNode[], edges: Resource
         if (!ep) continue;
         if (proto === 'lambda') {
           const fn = lambdaNameFromArn(ep);
-          if (fn) edges.push(edge('invokes', nid('sns-topic', name), nid('lambda', fn)));
-        } else if (proto === 'sqs') {
+          if (fn && isLocalArn(ep, ctx)) edges.push(edge('invokes', nid('sns-topic', name), nid('lambda', fn)));
+        } else if (proto === 'sqs' && isLocalArn(ep, ctx)) {
           edges.push(edge('publishes', nid('sns-topic', name), nid('sqs-queue', arnName(ep))));
         }
       }
@@ -174,15 +174,19 @@ async function eventbridge(ctx: CollectorContext, nodes: ResourceNode[], edges: 
       const id = nid('eventbridge-rule', nativeId);
       const ruleArn = r.Arn;
       const [res, tagRes] = await Promise.all([
-        attempt(ctx, `eventbridge targets ${nativeId}`, () => client.send(new ListTargetsByRuleCommand({ Rule: r.Name, EventBusName: bus }))),
+        attempt(ctx, `eventbridge targets ${nativeId}`, async () => {
+          const Targets: Target[] = []; let NextToken: string | undefined;
+          do { const page = await client.send(new ListTargetsByRuleCommand({ Rule: r.Name, EventBusName: bus, NextToken })); Targets.push(...(page.Targets ?? [])); NextToken = page.NextToken; } while (NextToken);
+          return { Targets };
+        }),
         ruleArn ? attempt(ctx, `eventbridge tags ${nativeId}`, () => client.send(new ListRuleTagsCommand({ ResourceARN: ruleArn }))) : undefined,
       ]);
       const targets: Target[] = res?.Targets ?? [];
       const refs = new Set<string>();
       for (const t of targets) {
         if (!t.Arn) continue;
-        const target = targetNodeId(t.Arn);
-        if (target) edges.push(edge('invokes', id, target, { label: t.EcsParameters?.TaskDefinitionArn ? arnName(t.EcsParameters.TaskDefinitionArn) : undefined }));
+        const target = isLocalArn(t.Arn, ctx) ? targetNodeId(t.Arn) : undefined;
+        if (target) edges.push(edge('invokes', id, target, { label: t.EcsParameters?.TaskDefinitionArn ? arnName(t.EcsParameters.TaskDefinitionArn) : undefined, status: r.State === 'DISABLED' ? 'inactive' : undefined }));
         else refs.add(t.Arn);
         if (t.RoleArn) refs.add(t.RoleArn);
         if (t.DeadLetterConfig?.Arn) refs.add(t.DeadLetterConfig.Arn);
@@ -228,7 +232,7 @@ async function stepFunctions(ctx: CollectorContext, nodes: ResourceNode[], edges
       ]);
       const refs = new Set(refsFromDefinition(detail?.definition));
       if (detail?.roleArn) refs.add(detail.roleArn);
-      const status = detail?.status ?? 'ACTIVE';
+      const status = detail?.status ?? 'UNKNOWN';
       nodes.push({
         id: nid('step-function', m.name),
         type: 'step-function',

@@ -64,6 +64,7 @@ async function run(ctx: CollectorContext) {
           (r) => r.PublicAccessBlockConfiguration,
           (err: unknown) => {
             const code = err instanceof Error ? err.name : '';
+            if (code === 'NoSuchPublicAccessBlockConfiguration') return { BlockPublicAcls: false, BlockPublicPolicy: false, IgnorePublicAcls: false, RestrictPublicBuckets: false };
             if (code !== 'NoSuchPublicAccessBlockConfiguration') ctx.log(`[s3 public access block ${name}] ${errMsg(err)}`);
             return undefined;
           },
@@ -77,7 +78,7 @@ async function run(ctx: CollectorContext) {
           },
         ),
       ]);
-      const blocked = Boolean(pab?.BlockPublicAcls && pab.BlockPublicPolicy && pab.IgnorePublicAcls && pab.RestrictPublicBuckets);
+      const blocked = pab === undefined ? null : Boolean(pab.BlockPublicAcls && pab.BlockPublicPolicy && pab.IgnorePublicAcls && pab.RestrictPublicBuckets);
       nodes.push({
         id: nid('s3-bucket', name),
         type: 's3-bucket',

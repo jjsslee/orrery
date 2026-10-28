@@ -16,12 +16,13 @@ import {
 } from '@aws-sdk/client-ec2';
 import type { ResourceEdge, ResourceNode } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
+import { attempt } from './util.ts';
 import { edge, nameFromTags, nid, statusFromState, tagsToRecord } from './ids.ts';
 
 interface SubnetRouting {
   routeTableId?: string;
   public: boolean;
-  natGatewayIds: string[];
+  routes: Array<{ target: string; destination: string; state?: string }>;
 }
 
 function classifyRoutes(subnetId: string, vpcId: string, tables: RouteTable[]): SubnetRouting {
@@ -31,8 +32,11 @@ function classifyRoutes(subnetId: string, vpcId: string, tables: RouteTable[]): 
   const routes = table?.Routes ?? [];
   return {
     routeTableId: table?.RouteTableId,
-    public: routes.some((r) => r.GatewayId?.startsWith('igw-') && r.State !== 'blackhole'),
-    natGatewayIds: routes.flatMap((r) => (r.NatGatewayId ? [r.NatGatewayId] : [])),
+    public: routes.some((r) => r.GatewayId?.startsWith('igw-') && r.State === 'active' && (r.DestinationCidrBlock === '0.0.0.0/0' || r.DestinationIpv6CidrBlock === '::/0')),
+    routes: routes.flatMap((r) => {
+      const target = r.NatGatewayId ? nid('nat-gateway', r.NatGatewayId) : r.TransitGatewayId ? nid('transit-gateway', r.TransitGatewayId) : r.GatewayId?.startsWith('igw-') ? nid('internet-gateway', r.GatewayId) : r.GatewayId?.startsWith('vpce-') ? nid('vpc-endpoint', r.GatewayId) : undefined;
+      return target ? [{ target, destination: r.DestinationCidrBlock ?? r.DestinationIpv6CidrBlock ?? r.DestinationPrefixListId ?? '목적지 미확인', state: r.State }] : [];
+    }),
   };
 }
 
@@ -42,12 +46,12 @@ async function run(ctx: CollectorContext) {
   const edges: ResourceEdge[] = [];
 
   const [vpcs, subnets, routeTables, igws, nats, endpoints] = await Promise.all([
-    collect(paginateDescribeVpcs({ client: ec2 }, {}), (p) => p.Vpcs),
-    collect(paginateDescribeSubnets({ client: ec2 }, {}), (p) => p.Subnets),
-    collect(paginateDescribeRouteTables({ client: ec2 }, {}), (p) => p.RouteTables),
-    collect(paginateDescribeInternetGateways({ client: ec2 }, {}), (p) => p.InternetGateways),
-    collect(paginateDescribeNatGateways({ client: ec2 }, {}), (p) => p.NatGateways),
-    collect(paginateDescribeVpcEndpoints({ client: ec2 }, {}), (p) => p.VpcEndpoints),
+    attempt(ctx, 'network paginateDescribeVpcs', () => collect(paginateDescribeVpcs({ client: ec2 }, {}), (p) => p.Vpcs)).then(v => v ?? []),
+    attempt(ctx, 'network paginateDescribeSubnets', () => collect(paginateDescribeSubnets({ client: ec2 }, {}), (p) => p.Subnets)).then(v => v ?? []),
+    attempt(ctx, 'network paginateDescribeRouteTables', () => collect(paginateDescribeRouteTables({ client: ec2 }, {}), (p) => p.RouteTables)).then(v => v ?? []),
+    attempt(ctx, 'network paginateDescribeInternetGateways', () => collect(paginateDescribeInternetGateways({ client: ec2 }, {}), (p) => p.InternetGateways)).then(v => v ?? []),
+    attempt(ctx, 'network paginateDescribeNatGateways', () => collect(paginateDescribeNatGateways({ client: ec2 }, {}), (p) => p.NatGateways)).then(v => v ?? []),
+    attempt(ctx, 'network paginateDescribeVpcEndpoints', () => collect(paginateDescribeVpcEndpoints({ client: ec2 }, {}), (p) => p.VpcEndpoints)).then(v => v ?? []),
   ]);
 
   for (const v of vpcs) {
@@ -86,19 +90,19 @@ async function run(ctx: CollectorContext) {
       parentId: nid('vpc', s.VpcId),
       az: s.AvailabilityZone,
       status: statusFromState(s.State),
-      statusLabel: routing.public ? '퍼블릭' : '프라이빗',
+      statusLabel: !routing.routeTableId ? '라우팅 미확인' : routing.public ? '퍼블릭' : '프라이빗',
       props: {
         CIDR: s.CidrBlock ?? null,
         가용영역: s.AvailabilityZone ?? null,
         '남은 IP': s.AvailableIpAddressCount ?? null,
-        퍼블릭: routing.public,
+        퍼블릭: routing.routeTableId ? routing.public : null,
         '퍼블릭 IP 자동 할당': Boolean(s.MapPublicIpOnLaunch),
         '라우트 테이블': routing.routeTableId ?? null,
       },
       tags,
     });
-    for (const natId of routing.natGatewayIds) {
-      edges.push(edge('routes', nid('subnet', s.SubnetId), nid('nat-gateway', natId), { label: '0.0.0.0/0' }));
+    for (const route of routing.routes) {
+      edges.push(edge('routes', nid('subnet', s.SubnetId), route.target, { label: route.destination, status: route.state === 'blackhole' ? 'critical' : route.state === 'active' ? 'healthy' : 'unknown', props: { '라우트 테이블': routing.routeTableId ?? null, 상태: route.state ?? null } }));
     }
   }
 
@@ -163,8 +167,15 @@ async function run(ctx: CollectorContext) {
         서비스: e.ServiceName ?? null,
         유형: e.VpcEndpointType ?? null,
         서브넷: e.SubnetIds?.length ?? 0,
-        '프라이빗 DNS': Boolean(e.PrivateDnsEnabled),
+        '프라이빗 DNS': e.PrivateDnsEnabled ?? null,
+        'DNS 이름': e.DnsEntries?.map(d => d.DnsName).filter(Boolean).join(', ') ?? null,
+        '연결 라우트 테이블': e.RouteTableIds?.join(', ') ?? null,
+        '엔드포인트 정책': e.PolicyDocument ?? null,
       },
+      relations: [
+        ...(e.ServiceName ? [{ ref: e.ServiceName, kind: 'attached' as const, label: 'VPC Endpoint 대상 서비스' }] : []),
+        ...(e.SubnetIds ?? []).map(id => ({ ref: nid('subnet', id), kind: 'attached' as const, label: 'Endpoint 네트워크 인터페이스 서브넷' })),
+      ],
       tags,
     });
     for (const sg of e.Groups ?? []) {

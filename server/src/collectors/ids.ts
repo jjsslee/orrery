@@ -60,3 +60,10 @@ export function statusFromState(state?: string | null): Status {
   if (['stopped', 'terminated', 'inactive', 'disabled', 'deleted', 'paused', 'suspended'].includes(s)) return 'inactive';
   return 'unknown';
 }
+
+/** Scope check before reducing an ARN to a local, name-based node ID. */
+export function isLocalArn(arn: string | undefined, scope: { account: string; region: string }): boolean {
+  if (!arn?.startsWith('arn:')) return false;
+  const [, partition, , region, account] = arn.split(':');
+  return partition === 'aws' && (!region || region === scope.region) && (!account || account === scope.account);
+}

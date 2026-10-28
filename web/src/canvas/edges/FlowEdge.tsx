@@ -11,11 +11,11 @@ const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(pref
 function FlowEdgeImpl({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }: EdgeProps<FlowEdgeType>) {
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.3 });
   if (!data) return null;
-  const { kind, live, traffic, dim, highlight, status, label, count, showTraffic, hasMetrics } = data;
+  const { kind, live, traffic, dim, highlight, status, label, count, showTraffic } = data;
   const animated = showTraffic && live && !reduceMotion && !dim;
   const particles = animated && traffic > 0 ? 1 + Math.round(traffic * 3) : 0;
   const dur = 4.2 - traffic * 2.8;
-  const idle = animated && traffic === 0 && !hasMetrics;
+  const idle = false;
   const cls = `fedge k-${kind} ${live ? 'live' : ''} ${dim ? 'dim' : ''} ${highlight ? 'hl' : ''} ${status ? `st-${status}` : ''} ${idle ? 'idle' : ''} ${data.ghost ? 'ghost' : ''}`;
   return (
     <>
