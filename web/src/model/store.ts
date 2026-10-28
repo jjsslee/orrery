@@ -106,6 +106,7 @@ export interface AppState {
   onlyType(t: ResourceType): void;
   resetFilters(): void;
   addTagFilter(f: TagFilter): void;
+  toggleTagFilter(f: TagFilter): void;
   removeTagFilter(f: TagFilter): void;
   clearTagFilters(): void;
   setTagNeighbors(v: boolean): void;
@@ -386,6 +387,11 @@ export const useStore = create<AppState>((set, get) => ({
     if (rest.some((x) => sameTagFilter(x, f))) return { railTab: 'tags' };
     return { tagFilters: [...rest, f], railTab: 'tags' };
   }),
+  toggleTagFilter: (f) => {
+    const s = get();
+    if (s.tagFilters.some((x) => sameTagFilter(x, f))) s.removeTagFilter(f);
+    else s.addTagFilter(f);
+  },
   removeTagFilter: (f) => set((s) => ({ tagFilters: s.tagFilters.filter((x) => !sameTagFilter(x, f)) })),
   clearTagFilters: () => set({ tagFilters: [] }),
   setTagNeighbors: (tagNeighbors) => set({ tagNeighbors }),

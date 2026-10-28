@@ -10,7 +10,7 @@ export function TagPanel() {
   const graph = useStore((s) => s.graph);
   const tagFilters = useStore((s) => s.tagFilters);
   const tagNeighbors = useStore((s) => s.tagNeighbors);
-  const { addTagFilter, removeTagFilter, clearTagFilters, setTagNeighbors } = useStore.getState();
+  const { toggleTagFilter, removeTagFilter, clearTagFilters, setTagNeighbors } = useStore.getState();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
   const [showSystem, setShowSystem] = useState(false);
@@ -60,7 +60,7 @@ export function TagPanel() {
             open={open.has(k.key) || Boolean(f)}
             onToggle={() => toggleOpen(k.key)}
             isActive={isActive}
-            onPick={addTagFilter}
+            onPick={toggleTagFilter}
             filter={f}
             limit={(more[k.key] ?? 1) * VALUE_PAGE}
             onMore={() => setMore((m) => ({ ...m, [k.key]: (m[k.key] ?? 1) + 1 }))}
@@ -90,7 +90,7 @@ function TagKeyRow({ entry, open, onToggle, isActive, onPick, filter, limit, onM
           <span className="tag-key-name" title={entry.key}>{entry.key}</span>
           <span className="rail-count tnum">{entry.count}</span>
         </button>
-        <button type="button" className={`tag-all ${keyActive ? 'on' : ''}`} onClick={() => onPick({ key: entry.key })} title="이 키가 있는 모든 자원">전체</button>
+        <button type="button" className={`tag-all ${keyActive ? 'on' : ''}`} aria-pressed={keyActive} onClick={() => onPick({ key: entry.key })} title="이 키가 있는 모든 자원">전체</button>
       </div>
       {open && (
         <ul className="tag-values">

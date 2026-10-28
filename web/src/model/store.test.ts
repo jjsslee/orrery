@@ -10,6 +10,35 @@ const graph = (account: string): ResourceGraph => ({ account, source: 'test', re
 const metrics = (label: string): MetricsBundle => ({ region: label, collectedAt: '', series: {}, traffic: {} });
 function reset() { useStore.setState({ profile: 'A', region: 'r', graph: graph('new'), metrics: undefined, metricsLoading: false, liveBusy: false, loading: { active: false, reports: {}, order: [] } }); }
 
+test('tag selection toggles values and whole keys without removing other filters', () => {
+  const other = { key: 'Environment', value: 'dev' };
+  for (const filter of [{ key: 'Service', value: 'api' }, { key: 'Service', value: '' }, { key: 'Service' }]) {
+    useStore.setState({ tagFilters: [other] });
+    useStore.getState().toggleTagFilter(filter);
+    assert.deepEqual(useStore.getState().tagFilters, [other, filter]);
+    useStore.getState().toggleTagFilter(filter);
+    assert.deepEqual(useStore.getState().tagFilters, [other]);
+  }
+  useStore.getState().clearTagFilters();
+});
+
+test('tag selection preserves multiple values and replaces whole-key filters', () => {
+  const first = { key: 'Service', value: 'api' };
+  const second = { key: 'Service', value: 'web' };
+  useStore.setState({ tagFilters: [] });
+  const pick = useStore.getState().toggleTagFilter;
+  pick(first);
+  pick(second);
+  assert.deepEqual(useStore.getState().tagFilters, [first, second]);
+  pick(first);
+  assert.deepEqual(useStore.getState().tagFilters, [second]);
+  pick({ key: 'Service' });
+  assert.deepEqual(useStore.getState().tagFilters, [{ key: 'Service' }]);
+  pick(first);
+  assert.deepEqual(useStore.getState().tagFilters, [first]);
+  useStore.getState().clearTagFilters();
+});
+
 test('bootstrap authentication failure is visible and clears old account data without rejecting', async () => {
   reset();
   const original = { ...api };
