@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { api } from '../api/client';
 import { useMonitoring, matchingAlarms, monitoringWindow } from './monitoring';
+import { MONITORING_RESOURCE_TYPES } from '@orrery/shared';
 import type { AlarmRecord, MonitoringAlarmSnapshot } from '@orrery/shared';
 const scope = { source: 'profile:test', account: 'dummy-account', region: 'test-region' };
 const observation = { attemptedAt: '2026-10-23T00:00:00Z', succeededAt: '2026-10-23T00:00:00Z' };
@@ -68,11 +69,11 @@ test('resource discovery batch stops on menu departure and clears filters/refere
   } finally { useMonitoring.getState().deactivate(); Object.assign(api, original); }
 });
 
-test('workspace entry discovers all six resource types with zero paid metric requests', async()=>{
+test('workspace entry discovers all supported resource types with zero paid metric requests', async()=>{
  const original={...api};const types:string[]=[];let metrics=0;
  api.monitoringResources=async(_p,_r,type)=>{types.push(type);return {scope,observation,complete:true,types:[type],resources:[]};};
  api.monitoringAlarms=async()=>({scope,observation,complete:true,alarms:[]});api.monitoringMetrics=async()=>{metrics++;throw new Error('must not run');};
- try {useMonitoring.getState().activate('test',scope.region);for(let i=0;i<30;i++)await Promise.resolve();assert.equal(new Set(types).size,6);assert.equal(metrics,0);}finally{useMonitoring.getState().deactivate();Object.assign(api,original);}
+ try {useMonitoring.getState().activate('test',scope.region);await new Promise(resolve => setImmediate(resolve));assert.deepEqual(types,MONITORING_RESOURCE_TYPES.map(([type])=>type));assert.equal(metrics,0);}finally{useMonitoring.getState().deactivate();Object.assign(api,original);}
 });
 
 test('selection starts debounced metrics while remaining resource types and relationship lookup are still pending',async()=>{

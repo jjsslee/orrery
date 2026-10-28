@@ -1,7 +1,7 @@
-import type { MonitoringMetricSeries, MonitoringResource, MonitoringResourceType } from '@orrery/shared';
+import type { MonitoringMetricSeries, MonitoringResource } from '@orrery/shared';
 import { matchesTags, sameTagFilter, type TagFilter } from './tags';
 
-export const MONITORING_RESOURCE_TYPES: Array<[MonitoringResourceType, string]> = [['lambda', 'Lambda'], ['sqs-queue', 'SQS'], ['load-balancer', 'ALB'], ['ecs-service', 'ECS'], ['ec2-instance', 'EC2'], ['rds-instance', 'RDS']];
+export { MONITORING_RESOURCE_TYPES } from '@orrery/shared';
 export interface ResourceFilters { query: string; tags: TagFilter[]; tagStatus: 'all' | 'untagged' | 'unavailable' }
 export const emptyResourceFilters = (): ResourceFilters => ({ query: '', tags: [], tagStatus: 'all' });
 

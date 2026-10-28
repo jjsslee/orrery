@@ -351,7 +351,30 @@ export const STATUS_LABEL: Record<Status, string> = {
 
 /** Monitoring settings and results are isolated from topology collection. */
 export interface MonitoringScope { source: string; account: string; region: string }
-export type MonitoringResourceType = 'lambda' | 'sqs-queue' | 'load-balancer' | 'ecs-service' | 'ec2-instance' | 'rds-instance';
+export const MONITORING_RESOURCE_TYPES = [
+  ['lambda', 'Lambda'],
+  ['sqs-queue', 'SQS'],
+  ['load-balancer', 'ALB / NLB'],
+  ['ecs-service', 'ECS Service'],
+  ['ec2-instance', 'EC2'],
+  ['rds-instance', 'RDS Instance'],
+  ['appsync-api', 'AppSync'],
+  ['api-gateway', 'API Gateway'],
+  ['cloudfront', 'CloudFront'],
+  ['dynamodb-table', 'DynamoDB'],
+  ['s3-bucket', 'S3'],
+  ['sns-topic', 'SNS'],
+  ['rds-cluster', 'RDS Cluster'],
+  ['ecs-cluster', 'ECS Cluster'],
+  ['elasticache', 'ElastiCache'],
+  ['efs', 'EFS'],
+  ['nat-gateway', 'NAT Gateway'],
+  ['eventbridge-rule', 'EventBridge Rule'],
+  ['step-function', 'Step Functions'],
+  ['autoscaling-group', 'Auto Scaling'],
+  ['target-group', 'Target Group'],
+] as const satisfies ReadonlyArray<readonly [ResourceType, string]>;
+export type MonitoringResourceType = (typeof MONITORING_RESOURCE_TYPES)[number][0];
 export interface MonitoringMetricContext { id: string; label: string; loadBalancerArn: string; region: string }
 export interface MonitoringResource {
   metricContexts?: MonitoringMetricContext[];

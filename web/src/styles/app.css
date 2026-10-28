@@ -751,7 +751,10 @@
 .mw-evidence-tag { display: inline-flex; flex-wrap: wrap; gap: 0 5px; min-width: 0; overflow-wrap: anywhere; }
 .mw-evidence-tag b { color: var(--ink-2); font-weight: 500; }
 .mw-evidence-more { padding-left: 18px; }
-.mw-related > .mw-footnote { flex: none; padding: 10px 16px; border-top: 1px solid var(--line); }
+.mw-related-help { margin: 10px 16px; color: var(--ink-3); font-size: var(--fs-small); }
+.mw-related-help > summary, .mw-candidate-details > summary { cursor: pointer; }
+.mw-related-help .mw-hint { margin: 8px 0; }
+.mw-candidate-details { margin-top: 4px; color: var(--ink-3); font-size: var(--fs-small); }
 
 /* With up to eight cards the tray stays in view as the column scrolls, so any card is one click away. */
 @media (min-width: 1181px) {

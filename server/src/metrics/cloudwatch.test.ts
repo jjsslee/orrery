@@ -89,3 +89,9 @@ test('metrics bundle identifies actual account/source independently of profile n
   const bundle = await collectMetrics(graph, {} as import('../aws/clients.ts').ClientFactory);
   assert.deepEqual((bundle as unknown as { scope: unknown }).scope, { source: graph.source, account: graph.account, region: graph.region });
 });
+
+test('WebSocket API uses message and integration metrics instead of HTTP metrics', () => {
+  const queries = queriesForNode(node({type:'api-gateway',nativeId:'ws-dummy',props:{_apiKind:'websocket'}}));
+  assert.deepEqual(queries.map(q => q.spec.metric), ['MessageCount', 'IntegrationError', 'IntegrationLatency']);
+  assert.deepEqual(queries[0].dims, [{Name:'ApiId',Value:'ws-dummy'}]);
+});

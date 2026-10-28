@@ -97,3 +97,13 @@ test('partial collection keeps candidates visible and confines AWS errors to col
   assert.doesNotMatch(html.replace(/<details\b[^>]*>[\s\S]*?<\/details>/g,''),/dummy-user/);
   assert.equal(html.match(/dummy-user/g)?.length,100);
 });
+
+test('related explanations and candidate evidence start collapsed while candidate actions stay visible', () => {
+  const candidate = resource('two', 'fixture-related');
+  const html = render({referenceResource:'one',related:{scope,resourceKey:'one',connected:[{resource:candidate,reasons:[{kind:'edge',direction:'outgoing',edgeKind:'invokes',evidence:'configuration',label:'fixture condition'}]}],sameTags:[],graph:{state:'complete'},tagCoverage:{types:['lambda'],incompleteTypes:[]},collectionBudget:{calls:10,maxCalls:1000,timeoutMs:120000,exhausted:false}}});
+  assert.match(html, /<details class="mw-related-help"><summary>관련 자원 안내<\/summary>/);
+  assert.match(html, /<details class="mw-candidate-details"><summary>관계·태그 근거 1개<\/summary>/);
+  assert.match(html, /fixture-related 추가/);
+  assert.match(html, /fixture condition/);
+  assert.match(html, /전체 구성 조회 10\/1000/);
+});

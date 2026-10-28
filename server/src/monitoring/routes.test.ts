@@ -97,7 +97,7 @@ test('history validates bounded range and returns page token/error distinctly', 
 test('each initial resource type lists only its service and keeps monitoring dimensions', async () => {
   const cases = [
     { type: 'sqs-queue' as const, responses: { ListQueuesCommand: { QueueUrls: ['https://sqs.test/000000000000/queue'] }, ListQueueTagsCommand: { Tags: { Service: 'dummy' } } }, expected: ['ListQueuesCommand', 'ListQueueTagsCommand'], nativeId: 'queue' },
-    { type: 'load-balancer' as const, responses: { DescribeLoadBalancersCommand: { LoadBalancers: [{ Type: 'application', LoadBalancerName: 'dummy', LoadBalancerArn: 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123' }, { Type: 'network', LoadBalancerArn: 'ignore' }] }, DescribeTagsCommand: { TagDescriptions: [{ Tags: [] }] } }, expected: ['DescribeLoadBalancersCommand', 'DescribeTagsCommand'], nativeId: 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123' },
+    { type: 'load-balancer' as const, responses: { DescribeLoadBalancersCommand: { LoadBalancers: [{ Type: 'application', LoadBalancerName: 'dummy', LoadBalancerArn: 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123' }, { Type: 'gateway', LoadBalancerArn: 'ignore' }] }, DescribeTagsCommand: { TagDescriptions: [{ Tags: [] }] } }, expected: ['DescribeLoadBalancersCommand', 'DescribeTagsCommand'], nativeId: 'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123' },
     { type: 'ecs-service' as const, responses: { ListClustersCommand: { clusterArns: ['arn:aws:ecs:ap-northeast-2:000000000000:cluster/dummy'] }, ListServicesCommand: { serviceArns: ['arn:aws:ecs:ap-northeast-2:000000000000:service/dummy/service'] }, DescribeServicesCommand: { services: [{ serviceArn: 'arn:aws:ecs:ap-northeast-2:000000000000:service/dummy/service', serviceName: 'service', tags: [] }] } }, expected: ['ListClustersCommand', 'ListServicesCommand', 'DescribeServicesCommand'], nativeId: 'dummy/service' },
     { type: 'ec2-instance' as const, responses: { DescribeInstancesCommand: { Reservations: [{ Instances: [{ InstanceId: 'i-dummy', Monitoring: { State: 'enabled' }, Tags: [{ Key: 'Name', Value: 'dummy' }] }] }] } }, expected: ['DescribeInstancesCommand'], nativeId: 'i-dummy' },
     { type: 'rds-instance' as const, responses: { DescribeDBInstancesCommand: { DBInstances: [{ DBInstanceIdentifier: 'dummy-db', TagList: [] }] } }, expected: ['DescribeDBInstancesCommand'], nativeId: 'dummy-db' },
@@ -144,4 +144,26 @@ test('resource route reuses five-minute cache and refresh=1 performs exactly one
  assert.equal((await app.inject(url)).statusCode,200);
  assert.equal(lists,2);
  await app.close();
+});
+
+test('AppSync lists both API kinds independently, preserves partial data, and uses their metric dimensions', async () => {
+  const calls: string[] = [];
+  const s = fixture(async command => {
+    calls.push(command.constructor.name);
+    if (command.constructor.name === 'ListGraphqlApisCommand') return { graphqlApis: [{ apiId: 'graphql-dummy', name: 'GraphQL', tags: {} }] };
+    if (command.constructor.name === 'ListApisCommand') {
+      if (command.input.nextToken) throw new Error('AccessDenied');
+      return { apis: [{ apiId: 'events-dummy', name: 'Events', tags: {} }], nextToken: 'next' };
+    }
+    throw new Error(`Unexpected ${command.constructor.name}`);
+  });
+  const app = Fastify();
+  registerMonitoringRoutes(app, async () => s, new AlarmRepository());
+  const result = await app.inject('/api/monitoring/resources?type=appsync-api');
+  assert.equal(result.statusCode, 200);
+  const body = result.json();
+  assert.equal(body.complete, false);
+  assert.deepEqual(body.resources.map((r: any) => r.props._apiKind).sort(), ['events', 'graphql']);
+  assert.deepEqual(calls.sort(), ['ListApisCommand', 'ListApisCommand', 'ListGraphqlApisCommand']);
+  await app.close();
 });

@@ -90,7 +90,7 @@ test('related and restore routes register graph-only resources for metrics with 
  const {AlarmRepository}=await import('./alarms.ts');
  const {mapAlarms,alarmRecord}=await import('./alarms.ts');
  const calls:Array<{command:any;region?:string}>=[];
- const session={...s,clients:{get:(_ctor:any,region?:string)=>({send:async(command:any)=>{calls.push({command,region});return{MetricDataResults:command.input.MetricDataQueries.map((q:any)=>({Id:q.Id,StatusCode:'Complete'}))};}})}} as unknown as MonitoringSession;
+ const session={...s,clients:{get:(_ctor:any,region?:string)=>({send:async(command:any)=>{if(command.constructor.name === 'ListDistributionsCommand') return {DistributionList:{Items:[]}}; calls.push({command,region});return{MetricDataResults:command.input.MetricDataQueries.map((q:any)=>({Id:q.Id,StatusCode:'Complete'}))};}})}} as unknown as MonitoringSession;
  const g=graph();
  g.nodes.push({id:'security-group:sg-dummy',nativeId:'sg-dummy',name:'group',type:'security-group',category:'security',region:scope.region,status:'unknown',props:{}});
  const app=Fastify();

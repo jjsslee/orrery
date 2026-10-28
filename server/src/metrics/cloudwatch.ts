@@ -117,6 +117,11 @@ const API_V2 = specs('AWS/ApiGateway', [
   { metric: '5xx', stat: 'Sum', label: '5xx 오류', unit: 'count' },
   { metric: 'Latency', stat: 'Average', label: '지연', unit: 'ms' },
 ]);
+const API_WEBSOCKET = specs('AWS/ApiGateway', [
+  { metric: 'MessageCount', stat: 'Sum', label: '메시지 수', unit: 'count', throughput: true },
+  { metric: 'IntegrationError', stat: 'Sum', label: '통합 오류', unit: 'count' },
+  { metric: 'IntegrationLatency', stat: 'Average', label: '통합 지연', unit: 'ms' },
+]);
 const EFS = specs('AWS/EFS', [
   { metric: 'TotalIOBytes', stat: 'Sum', label: '총 I/O 바이트', unit: 'bytes', throughput: true },
   { metric: 'ClientConnections', stat: 'Sum', label: '클라이언트 연결', unit: 'count' },
@@ -199,7 +204,7 @@ export function queriesForNode(node: ResourceNode): MetricQuery[] {
     case 'cloudfront': return q(CLOUDFRONT, [dim('Region', 'Global'), dim('DistributionId', id)], 'us-east-1');
     case 'api-gateway': {
       const kind = str(node.props['_apiKind']) ?? 'rest';
-      return kind === 'rest' ? q(API_REST, [dim('ApiName', node.name)]) : q(API_V2, [dim('ApiId', id)]);
+      return kind === 'rest' ? q(API_REST, [dim('ApiName', node.name)]) : q(kind === 'websocket' ? API_WEBSOCKET : API_V2, [dim('ApiId', id)]);
     }
     case 'appsync-api':
       return str(node.props['_apiKind']) === 'events' ? q(APPSYNC_EVENTS, [dim('EventAPIId', id)]) : q(APPSYNC_GRAPHQL, [dim('GraphQLAPIId', id)]);
