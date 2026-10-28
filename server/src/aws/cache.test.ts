@@ -58,3 +58,18 @@ test('graph cache separates legacy data and each credential/account/region scope
     for (const [source, account, region] of scopes) assert.deepEqual(await reopened.get(scopeKey('graph-v7', source, account, region), 10000), { source, account, region });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('disk persistence failures remain visible and keep the in-memory result available',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'orrery-history-error-'));
+ try{const path=join(dir,'file');await writeFile(path,'dummy');const cache=new Cache(path);assert.equal(await cache.set('dummy',{value:1}),false);assert.deepEqual(await cache.get('dummy',10000),{value:1});}finally{await rm(dir,{recursive:true,force:true});}
+});
+test('aggregate history cap evicts oldest history without deleting current topology',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'orrery-history-cap-'));
+ try {
+ const cache=new Cache(dir);const payload='x'.repeat(26*1024*1024);
+ for(const key of ['old','new']) assert.equal(await cache.set(`graph-v9:${key}`,{nodes:[{id:key}],relationshipHistory:[payload],relationshipChanges:[],historicalNodes:[]}),true);
+ const old=await cache.get<{nodes:{id:string}[];relationshipHistory:unknown[]}>('graph-v9:old',Infinity);
+ assert.equal(old?.relationshipHistory.length,0);assert.equal(old?.nodes[0].id,'old');
+ const reopened=await new Cache(dir).get<typeof old>('graph-v9:old',Infinity);assert.equal(reopened?.relationshipHistory.length,0);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

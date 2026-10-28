@@ -79,7 +79,7 @@ async function run(ctx: CollectorContext) {
       const summaries: string[] = [];
       for (const listener of listeners ?? []) {
         const rules = lb.Type === 'application' && listener.ListenerArn
-          ? await attempt(ctx, 'elb listener rules', () => collect(paginateDescribeRules({ client: elb }, { ListenerArn: listener.ListenerArn }), p => p.Rules))
+          ? await attempt(ctx, `elb listener rules ${listener.ListenerArn}`, () => collect(paginateDescribeRules({ client: elb }, { ListenerArn: listener.ListenerArn }), p => p.Rules))
           : [{ IsDefault: true, Actions: listener.DefaultActions }];
         for (const rule of rules ?? []) {
           const condition = `${listener.Protocol}:${listener.Port} · ${ruleLabel(rule)}`;
@@ -87,7 +87,7 @@ async function run(ctx: CollectorContext) {
           for (const action of rule.Actions ?? []) {
             if (action.Type !== 'forward') continue;
             const destinations = action.ForwardConfig?.TargetGroups ?? (action.TargetGroupArn ? [{ TargetGroupArn: action.TargetGroupArn }] : []);
-            for (const dest of destinations) if (dest.TargetGroupArn) edges.push(edge('targets', nid('load-balancer', lb.LoadBalancerArn!), nid('target-group', dest.TargetGroupArn), { label: `${condition} · weight=${dest.Weight ?? '기본'}`, props: { 근거: 'listener rule', '동작 순서': action.Order ?? null } }));
+            for (const dest of destinations) if (dest.TargetGroupArn) edges.push(edge('targets', nid('load-balancer', lb.LoadBalancerArn!), nid('target-group', dest.TargetGroupArn), { label: `${condition} · weight=${dest.Weight ?? '기본'}`, configurationId: `rule|${rule.RuleArn ?? listener.ListenerArn + ':default'}|${action.Order ?? 0}|${dest.TargetGroupArn}`, evidence: [{ partition: lb.Type === 'application' ? `elb listener rules ${listener.ListenerArn}` : `elb listeners ${lb.LoadBalancerName}`, collector: 'elb', operation: lb.Type === 'application' ? 'DescribeRules' : 'DescribeListeners', owner: listener.ListenerArn, method: 'configuration' }], props: { 근거: 'listener rule', '동작 순서': action.Order ?? null, conditions: JSON.stringify(rule.Conditions ?? []), priority: rule.Priority ?? 'default', isDefault: rule.IsDefault ?? false, weight: dest.Weight ?? null, listener: listener.ListenerArn ?? null, actions: JSON.stringify((rule.Actions ?? []).map(a => ({type:a.Type,order:a.Order,targetGroup:a.TargetGroupArn,forward:a.ForwardConfig,redirect:a.RedirectConfig,fixedStatus:a.FixedResponseConfig?.StatusCode}))) } }));
           }
         }
         for (const certificate of listener.Certificates ?? []) {
@@ -137,6 +137,7 @@ async function run(ctx: CollectorContext) {
         헬스체크: tg.HealthCheckProtocol ? `${tg.HealthCheckProtocol}:${tg.HealthCheckPort ?? 'traffic-port'} / ${tg.HealthCheckIntervalSeconds ?? '-'}s` : null,
         '정상/전체': known ? `${summary.healthy}/${summary.total}` : null,
         '로드밸런서 수': tg.LoadBalancerArns?.length ?? 0,
+        _applicationLoadBalancers: JSON.stringify((tg.LoadBalancerArns ?? []).filter(a => lbs.some(lb => lb.LoadBalancerArn === a && lb.Type === 'application'))),
         'IP 유형': tg.IpAddressType ?? null,
       },
       tags: tagsByArn.get(arn),
@@ -170,6 +171,7 @@ async function run(ctx: CollectorContext) {
       edges.push(
         edge('targets', nid('target-group', arn), targetId, {
           label: h.Target?.Port != null ? String(h.Target.Port) : undefined,
+          evidence: [{partition: `elb target health ${tg.TargetGroupName}`,collector:'elb',operation:'DescribeTargetHealth',owner:arn,method:'configuration'}],
           status: targetStatus(h.TargetHealth?.State),
           props: { 상태: h.TargetHealth?.State ?? null, 사유: h.TargetHealth?.Reason ?? null },
         }),

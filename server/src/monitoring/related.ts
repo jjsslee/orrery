@@ -1,6 +1,7 @@
 import type { MonitoringGraphState, MonitoringRelatedCandidate, MonitoringResource, ResourceGraph } from '@orrery/shared';
 import type { MonitoringSession } from './alarms.ts';
 import { scopeKey } from '../aws/sessions.ts';
+import { reconcileGraph } from './observations.ts';
 import { graphResources } from './resources.ts';
 
 export interface MonitoringGraphProvider {
@@ -22,7 +23,7 @@ export function relatedCandidates(base: MonitoringResource, known: MonitoringRes
       const resource = byNode.get(outgoing ? edge.target : edge.source);
       if (!resource || resource.key === base.key) continue;
       const candidate = connected.get(resource.key) ?? { resource, reasons: [] };
-      const reason = { kind: 'edge' as const, direction: outgoing ? 'outgoing' as const : 'incoming' as const, edgeKind: edge.kind, label: edge.label, evidence: 'unknown' as const };
+      const reason = { observation: edge.observation, sources: edge.evidence, relationId: edge.id, kind: 'edge' as const, direction: outgoing ? 'outgoing' as const : 'incoming' as const, edgeKind: edge.kind, label: edge.label, evidence: edge.evidence?.[0]?.method ?? 'unknown' as const };
       if (!candidate.reasons.some((r) => JSON.stringify(r) === JSON.stringify(reason))) candidate.reasons.push(reason);
       connected.set(resource.key, candidate);
     }
@@ -37,12 +38,7 @@ export function relatedCandidates(base: MonitoringResource, known: MonitoringRes
 }
 
 function preservePartial(graph: ResourceGraph, previous?: ResourceGraph): ResourceGraph {
-  if (!previous || !graph.reports.some((r) => !r.ok)) return graph;
-  const nodes = new Map(previous.nodes.map((n) => [n.id, n]));
-  const edges = new Map(previous.edges.map((e) => [e.id, e]));
-  graph.nodes.forEach((n) => nodes.set(n.id, n));
-  graph.edges.forEach((e) => edges.set(e.id, e));
-  return { ...graph, nodes: [...nodes.values()], edges: [...edges.values()] };
+  return reconcileGraph(graph, previous);
 }
 
 interface GraphEntry { graph?: ResourceGraph; force?: boolean; succeededAt?: string; pending?: Promise<void>; attemptedAt?: string; error?: string; errorCode?: string }
@@ -71,7 +67,8 @@ export class MonitoringGraphRepository {
         assertGraphScope(s, graph);
         entry.graph = preservePartial(graph, entry.graph);
         if (!graph.reports.some((r) => !r.ok)) entry.succeededAt = graph.collectedAt;
-      }).catch((error: unknown) => { entry.error = error instanceof Error ? error.message : String(error); entry.errorCode = error instanceof Error ? error.name : 'UnknownError'; }).finally(() => { entry.pending = undefined; });
+      }).catch((error: unknown) => { entry.error = error instanceof Error ? error.message : String(error); entry.errorCode = error instanceof Error ? error.name : 'UnknownError';
+        if (entry.graph) entry.graph = { ...entry.graph, edges: [], relationshipHistory: [...(entry.graph.relationshipHistory ?? []), ...entry.graph.edges.map(e => ({ ...e, observation: { ...e.observation, state: 'unverified' as const, lastAttemptAt: entry.attemptedAt } }))] }; }).finally(() => { entry.pending = undefined; });
     }
     const partial = entry.graph?.reports.some((r) => !r.ok);
     const errors = entry.graph?.reports.filter((r) => !r.ok).map((r) => `${r.collector}: ${r.error ?? '조회 실패'}`).join('; ');

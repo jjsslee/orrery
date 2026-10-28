@@ -14,9 +14,10 @@ export function validateMetricRequest(input: unknown, now = Date.now()): Monitor
   if (!Array.isArray(body.resourceKeys) || body.resourceKeys.length < 1 || body.resourceKeys.length > MAX_OBSERVED_RESOURCES || body.resourceKeys.some((k) => typeof k !== 'string' || k.length > 2048) || new Set(body.resourceKeys).size !== body.resourceKeys.length) return bad(`비교 자원은 중복 없이 1~${MAX_OBSERVED_RESOURCES}개 선택하세요.`);
   const start = Date.parse(body.range?.startTime), end = Date.parse(body.range?.endTime);
   if (typeof body.range?.startTime !== 'string' || typeof body.range?.endTime !== 'string' || !/^\d{4}-\d\d-\d\dT/.test(body.range.startTime) || !/^\d{4}-\d\d-\d\dT/.test(body.range.endTime) || !Number.isFinite(start) || !Number.isFinite(end) || start >= end || end - start > 7 * DAY || end > now || start < now - 455 * DAY) return bad('기간은 과거 455일 이내, 최대 7일이며 종료가 시작보다 늦어야 합니다.');
-  if (body.metricIds !== undefined && (!Array.isArray(body.metricIds) || body.metricIds.length < 1 || body.metricIds.length > 100 || body.metricIds.some((id) => typeof id !== 'string' || id.length > 100) || new Set(body.metricIds).size !== body.metricIds.length)) return bad('지표 선택을 확인하세요.');
+  if (body.metricIds !== undefined && (!Array.isArray(body.metricIds) || body.metricIds.length < 1 || body.metricIds.length > 100 || body.metricIds.some((id) => typeof id !== 'string' || id.length > 2048) || new Set(body.metricIds).size !== body.metricIds.length)) return bad('지표 선택을 확인하세요.');
   if (body.period !== undefined && ![60, 300, 900, 3600, 86400].includes(body.period)) return bad('지원하는 집계 주기를 선택하세요.');
-  const allowed = new Set(['resourceKeys', 'range', 'metricIds', 'period', 'refresh']);
+  if (body.contexts !== undefined && (!body.contexts || typeof body.contexts !== 'object' || Array.isArray(body.contexts) || Object.entries(body.contexts).some(([key,value]) => !body.resourceKeys.includes(key) || typeof value !== 'string' || value.length > 2048))) return bad('지표의 로드밸런서 맥락을 확인하세요.');
+  const allowed = new Set(['contexts', 'resourceKeys', 'range', 'metricIds', 'period', 'refresh']);
   if (Object.keys(body).some((key) => !allowed.has(key)) || (body.refresh !== undefined && typeof body.refresh !== 'boolean')) return bad('지원하지 않는 지표 요청 항목입니다.');
   return body;
 }
@@ -47,14 +48,19 @@ export function planMetrics(input: MonitoringMetricRequest, known: MonitoringRes
   for (const key of input.resourceKeys) {
     const resource = known.find((r) => r.key === key);
     if (!resource) return bad('현재 계정·리전에서 먼저 조회한 자원만 선택할 수 있습니다. 자원 목록을 갱신하세요.');
-    const queries = monitoringQueries(resource);
+    const contextId = input.contexts?.[key];
+    const context = resource.metricContexts?.find(c => c.id === contextId);
+    if (resource.type === 'target-group' && (!context || context.region !== resource.region)) return bad('Target Group에 연결된 ALB 맥락을 먼저 선택하세요.');
+    if (contextId && !context) return bad('현재 확인된 지표 맥락만 선택할 수 있습니다.');
+    const queries = monitoringQueries(context ? {...resource,props:{...resource.props,_metricLoadBalancerArn:context.loadBalancerArn}} : resource);
     if (!queries.length) return bad(resource.metricsUnsupportedReason ?? '이 자원의 CloudWatch 지표 프리셋은 아직 지원하지 않습니다.');
     if (resource.type === 'lambda') available.add('ErrorRate:derived');
     for (const query of queries) {
       const id = metricId(query);
-      available.add(id);
+      const contextualId = resource.type === 'target-group' ? JSON.stringify([query.spec.namespace,query.dims,id,query.region ?? resource.region]) : id;
+      available.add(id); available.add(contextualId);
       const derivedInput = resource.type === 'lambda' && input.metricIds?.includes('ErrorRate:derived') && ['Errors', 'Invocations'].includes(query.spec.metric);
-      if (input.metricIds && !input.metricIds.includes(id) && !derivedInput) continue;
+      if (input.metricIds && !input.metricIds.includes(id) && !input.metricIds.includes(contextualId) && !derivedInput) continue;
       const period = Math.max(effectivePeriod(query, resource, start, end, now), input.period ?? 0);
       plans.push({ query, resource, period, start: Math.floor(start / (period * 1000)) * period * 1000, end: Math.ceil(end / (period * 1000)) * period * 1000 });
     }
@@ -112,13 +118,13 @@ async function fetchMetrics(s: MonitoringSession, body: MonitoringMetricRequest,
       const r = results.get(`q${i}`);
       const points = [...new Map((r?.points ?? []).filter((point) => point.t >= p.start && point.t < p.end).map((point) => [point.t, point])).values()].sort((a, b) => a.t - b.t);
       const status = r?.status === 'Forbidden' || r?.status === 'InternalError' || !r ? 'error' : failure || r.status === 'PartialData' || r.status !== 'Complete' ? 'partial' : points.length ? 'complete' : 'empty';
-      series[p.resource.key].push({ id: metricId(p.query), name: p.query.spec.metric, label: p.query.spec.label, unit: p.query.spec.unit, stat: p.query.spec.stat, points, latest: points.at(-1)?.v ?? null, status, awsStatus: r?.status, errorCode, messages: [...r?.messages ?? [], ...failure ? [failure] : [], ...!r && !failure ? ['CloudWatch 응답에서 지표가 누락되었습니다.'] : []], period: p.period, startTime: new Date(p.start).toISOString(), endTime: new Date(p.end).toISOString(), fetchedAt: collectedAt, lastDataAt: points.length ? new Date(points.at(-1)!.t).toISOString() : undefined, region: p.query.region ?? s.region });
+      series[p.resource.key].push({ id: p.resource.type === 'target-group' ? JSON.stringify([p.query.spec.namespace, p.query.dims, metricId(p.query), p.query.region ?? s.region]) : metricId(p.query), contextId: body.contexts?.[p.resource.key], namespace: p.query.spec.namespace, name: p.query.spec.metric, label: p.query.spec.label, unit: p.query.spec.unit, stat: p.query.spec.stat, points, latest: points.at(-1)?.v ?? null, status, awsStatus: r?.status, errorCode, messages: [...r?.messages ?? [], ...failure ? [failure] : [], ...!r && !failure ? ['CloudWatch 응답에서 지표가 누락되었습니다.'] : []], period: p.period, startTime: new Date(p.start).toISOString(), endTime: new Date(p.end).toISOString(), fetchedAt: collectedAt, lastDataAt: points.length ? new Date(points.at(-1)!.t).toISOString() : undefined, region: p.query.region ?? s.region });
     });
   }
   for (const list of Object.values(series)) {
     const rate = derivedErrorRate(list);
     if (rate && (!body.metricIds || body.metricIds.includes(rate.id))) list.push(rate);
-    if (body.metricIds) list.splice(0, list.length, ...list.filter((item) => body.metricIds!.includes(item.id)));
+    if (body.metricIds) list.splice(0, list.length, ...list.filter((item) => body.metricIds!.includes(item.name + ':' + item.stat) || body.metricIds!.includes(item.id)));
   }
   return { scope: { source: s.source, account: s.account, region: s.region }, range: body.range, collectedAt, series, queryCount: plans.length, requestCount, maxRequests: MAX_REQUESTS };
 }

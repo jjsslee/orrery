@@ -1,7 +1,9 @@
-import type { AlarmInfo, CleanupDiscovery, ResourceEdge, ResourceNode } from '@orrery/shared';
+import type { AlarmInfo, CleanupDiscovery, ResourceEdge, ResourceNode, RelationCoverage } from '@orrery/shared';
 import type { ClientFactory } from '../aws/clients.ts';
 
 export interface CollectorOutput {
+  collector?: string;
+  coverage?: RelationCoverage[];
   cleanup?: CleanupDiscovery;
   nodes: ResourceNode[];
   edges: ResourceEdge[];
@@ -16,6 +18,7 @@ export interface CollectorContext {
   /** Concurrency limiter shared by all collectors (per-resource fan-out calls) */
   limit: <T>(fn: () => Promise<T>) => Promise<T>;
   log: (message: string) => void;
+  observe?: (coverage: Omit<RelationCoverage, "collector">) => void;
 }
 
 export interface Collector {

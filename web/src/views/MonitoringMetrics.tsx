@@ -28,7 +28,7 @@ export function MonitoringMetrics() {
   const domain = m.metrics ? { start: Date.parse(m.metrics.range.startTime), end: Date.parse(m.metrics.range.endTime) } : undefined;
   const valueDomains = new Map<string, { min: number; max: number }>();
   for (const list of Object.values(m.metrics?.series ?? {})) for (const series of list) {
-    const key = `${series.id}:${series.unit}:${series.stat}`;
+    const key = `${series.name}:${series.unit}:${series.stat}`;
     const valueDomain = valueDomains.get(key) ?? { min: 0, max: 0 };
     for (const point of series.points) if (point.v != null && Number.isFinite(point.v)) { valueDomain.min = Math.min(valueDomain.min, point.v); valueDomain.max = Math.max(valueDomain.max, point.v); }
     valueDomains.set(key, valueDomain);
@@ -64,6 +64,18 @@ export function MonitoringMetrics() {
     </p>
     {m.metricsError && <p role="alert" className="monitor-notice">지표 조회 문제 · 이전 값이 포함될 수 있습니다: {m.metricsError}</p>}
 
+    {domain && !!m.related?.changes?.length && <section className="mw-change-timeline" aria-label="구성 변화 관측 구간">
+      <h3>기준 자원 주변의 구성 변화</h3>
+      <p className="mw-hint">음영은 마지막 확인부터 이번 확인까지의 구간입니다. 실제 변경 시각·장애 원인을 뜻하지 않습니다.</p>
+      <svg viewBox="0 0 600 48" role="img" aria-label="선택 기간과 같은 시간축의 구성 변화 관측 구간">
+        <line x1="4" x2="596" y1="40" y2="40" stroke="var(--ink-4)" />
+        {m.related.changes.filter(c => c.from && Date.parse(c.to) >= domain.start && Date.parse(c.from) <= domain.end).map(c => {
+          const x = (t:number) => 4 + Math.max(0,Math.min(1,(t-domain.start)/(domain.end-domain.start)))*592;
+          const left=x(Date.parse(c.from!)),right=x(Date.parse(c.to));
+          return <rect key={c.id} x={left} y="4" width={Math.max(2,right-left)} height="32" fill="var(--cat-network)" opacity="0.25"><title>{c.kind} · {fmtDateTime(c.from)} ~ {fmtDateTime(c.to)} · {c.label}</title></rect>;
+        })}
+      </svg><div className="mw-axis"><span>{fmtDateTime(domain.start)}</span><span>{fmtDateTime(domain.end)}</span></div>
+    </section>}
     <div ref={chartHost} className="mw-cards">
       {!selected.length && <div className="mw-observe-empty">
         <span className="mw-observe-empty-icon"><Activity size={26} aria-hidden /></span>
@@ -90,12 +102,15 @@ export function MonitoringMetrics() {
               <button type="button" className="icon-btn" aria-label={`${name} 빼기`} title="함께 보기에서 빼기" onClick={() => m.toggleResource(key)}><X size={15} /></button>
             </div>
           </header>
+          {resource?.type === 'target-group' && <p className="mw-card-note">연결 ALB: {resource.metricContexts?.find(c => c.id === m.metricContexts[key])?.label ?? '재선택 필요'} · Target Group 전체 지표이며 특정 listener 조건 전용 값은 아닙니다.</p>}
+          {resource?.type === 'load-balancer' && <p className="mw-card-note">로드밸런서 전체 지표입니다. 선택한 경로·조건만의 값이 아닙니다.</p>}
+          {resource?.type === 'ec2-instance' && <p className="mw-card-note">호스트 전체 지표입니다. 특정 ECS 서비스의 사용량을 뜻하지 않습니다.</p>}
           <MonitoringResourceAlarms resourceKey={key} />
           {resource?.metricsSupported === false ? <p className="mw-card-note">{resource.metricsUnsupportedReason ?? '이 자원 유형의 추천 지표는 제공되지 않습니다.'} 관련 경보와 연결은 확인할 수 있습니다.</p> : <>
             {m.metricsLoading && !m.metrics?.series[key]?.length && <p className="mw-card-note mw-progress" role="status"><RefreshCw size={14} className="spin" aria-hidden />지표를 불러오는 중</p>}
             {m.metrics && !m.metricsLoading && !m.metrics.series[key]?.length && <p className="mw-card-note">지원 지표가 없거나 결과가 반환되지 않았습니다. 조회 범위와 권한을 확인하세요.</p>}
             {!!m.metrics?.series[key]?.length && <div className="mw-metric-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>{m.metrics.series[key].map((series) => {
-              const scale = valueDomains.get(`${series.id}:${series.unit}:${series.stat}`);
+              const scale = valueDomains.get(`${series.name}:${series.unit}:${series.stat}`);
               const hasPoints = series.points.some((point) => point.v != null && Number.isFinite(point.v));
               const quality = QUALITY_LABEL[series.status ?? ''];
               return <section className={`mw-metric quality-${series.status ?? 'complete'} ${metricNeedsAttention(series) ? 'needs-attention' : ''}`} key={series.id} aria-label={`${name} ${series.label}`}>

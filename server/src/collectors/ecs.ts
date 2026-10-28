@@ -8,7 +8,6 @@
 import {
   ECSClient,
   DescribeClustersCommand,
-  DescribeServicesCommand,
   DescribeTaskDefinitionCommand,
   DescribeTasksCommand,
   DescribeContainerInstancesCommand,
@@ -19,6 +18,7 @@ import {
   type Service,
   type TaskDefinition,
 } from '@aws-sdk/client-ecs';
+import { readEcsServices } from './ecs-services.ts';
 import { EC2Client, DescribeInstancesCommand, paginateDescribeSubnets } from '@aws-sdk/client-ec2';
 import type { ResourceEdge, ResourceNode, Status } from '@orrery/shared';
 import type { Collector, CollectorContext } from './types.ts';
@@ -110,20 +110,10 @@ async function run(ctx: CollectorContext) {
       if (!serviceArns?.length) return;
       await Promise.all(
         chunk(serviceArns, 10).map(async (batch) => {
-          let found: Service[] = [];
-          try {
-            const res = await ctx.limit(() => ecs.send(new DescribeServicesCommand({ cluster: c.clusterArn, services: batch, include: ['TAGS'] })));
-            found = res.services ?? [];
-          } catch { /* A denied sibling must not conceal readable services. */ }
+          const found = await readEcsServices(ecs, c.clusterArn!, batch, message => ctx.log(`[ecs services] ${message}`), ctx.limit);
+          for (const arn of batch) ctx.observe?.({key:`ecs service ${arn}`,operation:'DescribeServices',owner:arn,state:found.some(s=>s.serviceArn===arn)?'complete':'failed',attemptedAt:new Date().toISOString()});
           services.push(...found.map(service => ({ clusterName: name, service })));
-          for (const arn of batch.filter(arn => !found.some(s => s.serviceArn === arn))) {
-            const res = await attempt(ctx, `ecs describe service ${arnName(arn)}`, () => ecs.send(new DescribeServicesCommand({ cluster: c.clusterArn, services: [arn], include: ['TAGS'] })));
-            if (res?.services?.length) services.push(...res.services.map(service => ({ clusterName: name, service })));
-            else {
-              if (res) ctx.log(`[ecs service ${arnName(arn)}] ${res.failures?.map(f => f.reason).join(', ') || '상세 응답 없음'}`);
-              services.push({ clusterName: name, service: { serviceArn: arn, serviceName: arnName(arn), status: 'DETAIL_UNAVAILABLE' } });
-            }
-          }
+          for (const arn of batch.filter(arn => !found.some(s => s.serviceArn === arn))) services.push({ clusterName: name, service: { serviceArn: arn, serviceName: arnName(arn), status: 'DETAIL_UNAVAILABLE' } });
         }),
       );
     }),
@@ -227,14 +217,17 @@ async function run(ctx: CollectorContext) {
       tags: lowerTags(s.tags),
       refs,
     });
-    edges.push(edge('member', nid('ecs-cluster', clusterName), id));
-    for (const host of placement?.hosts ?? []) edges.push(edge('attached', id, nid('ec2-instance', host), { label: '실행 호스트' }));
+    const serviceEvidence = [{partition:`ecs service ${s.serviceArn}`,collector:'ecs',operation:'DescribeServices',owner:s.serviceArn,method:'configuration' as const}];
+    const runtimeKey = `ecs runtime ${s.serviceArn}`;
+    ctx.observe?.({key:runtimeKey,operation:'ListTasks/DescribeTasks/DescribeContainerInstances/DescribeInstances',owner:s.serviceArn,state:s.status === 'DETAIL_UNAVAILABLE' ? 'failed' : s.runningCount === 0 || placement?.complete ? 'complete' : 'partial',attemptedAt:new Date().toISOString()});
+    edges.push(edge('member', nid('ecs-cluster', clusterName), id, {evidence:serviceEvidence}));
+    for (const host of placement?.hosts ?? []) edges.push(edge('attached', id, nid('ec2-instance', host), { evidence:[{partition:runtimeKey,collector:'ecs',operation:'DescribeTasks/DescribeContainerInstances',owner:s.serviceArn,method:'configuration'}], label: '실행 호스트', props: { role: 'execution-host' } }));
     if (!vpcId) for (const vpc of vpcs) edges.push(edge('attached', id, nid('vpc', vpc), { label: '확인된 실행 VPC' }));
     for (const sg of net?.securityGroups ?? []) edges.push(edge('attached', id, nid('security-group', sg)));
     if (td?.taskRoleArn) edges.push(edge('assumes', id, nid('iam-role', arnName(td.taskRoleArn))));
     for (const lb of s.loadBalancers ?? []) {
       if (!lb.targetGroupArn) continue;
-      edges.push(edge('targets', nid('target-group', lb.targetGroupArn), id, { label: `${lb.containerName ?? '?'}:${lb.containerPort ?? '?'}` }));
+      edges.push(edge('targets', nid('target-group', lb.targetGroupArn), id, {configurationId:`serviceTarget|${s.serviceArn}|${lb.targetGroupArn}|${lb.containerName}`,evidence:serviceEvidence,label: `${lb.containerName ?? '?'}:${lb.containerPort ?? '?'}`,props:{containerName:lb.containerName ?? null,containerPort:lb.containerPort ?? null}}));
     }
   }
 

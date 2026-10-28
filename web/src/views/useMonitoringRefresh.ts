@@ -7,7 +7,7 @@ export function useMonitoringRefresh() {
   useEffect(() => {
     const ready = () => { const s = useMonitoring.getState(); return s.workspaceActive && Boolean(s.profile && s.region && s.selectedResources.length) && document.visibilityState === 'visible'; };
     const controller = createMonitoringWorkspaceRequests({
-      key: () => { const s = useMonitoring.getState(); return JSON.stringify([s.profile, s.region, [(s.alarms?.scope ?? s.resources?.scope)?.source, (s.alarms?.scope ?? s.resources?.scope)?.account], s.selectedResources, s.range, s.range === 'custom' ? [s.customStart, s.customEnd] : []]); },
+      key: () => { const s = useMonitoring.getState(); return JSON.stringify([s.profile, s.region, [(s.alarms?.scope ?? s.resources?.scope)?.source, (s.alarms?.scope ?? s.resources?.scope)?.account], s.selectedResources, s.selectedResources.map(k => s.metricContexts[k]), s.range, s.range === 'custom' ? [s.customStart, s.customEnd] : []]); },
       ready, subscribe: (listener) => useMonitoring.subscribe(listener), run: async () => { await useMonitoring.getState().loadMetrics(); },
     });
     controller.start();

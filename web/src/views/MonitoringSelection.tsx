@@ -9,14 +9,17 @@ export function SelectToggle({ resourceKey, name }: { resourceKey: string; name:
   const m = useMonitoring();
   const selected = m.selectedResources.includes(resourceKey);
   const full = !selected && m.selectedResources.length >= MAX_OBSERVED;
-  return <button
+  const resource = m.resources?.resources.find(r => r.key === resourceKey);
+  const contexts = resource?.metricContexts;
+  const requiresContext = resource?.type === 'target-group' && !contexts?.some(c => c.id === m.metricContexts[resourceKey]);
+  return <div className="mw-context-select">{contexts && !selected && <label>연결 ALB<select aria-label={`${name} 지표의 연결 ALB`} value={m.metricContexts[resourceKey] ?? ''} onChange={e => m.setMetricContext(resourceKey,e.target.value)}><option value="">선택하세요</option>{contexts.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>}<button
     type="button"
     className={`mw-toggle ${selected ? 'is-on' : ''}`}
     aria-label={`${name} ${selected ? '빼기' : '추가'}`}
-    disabled={full}
+    disabled={full || (!selected && (resource?.metricsSupported === false || requiresContext))}
     title={full ? `최대 ${MAX_OBSERVED}개까지 함께 봅니다. 하나를 빼면 추가할 수 있습니다.` : selected ? '함께 보기에서 뺍니다' : '함께 보기에 추가합니다'}
     onClick={() => m.toggleResource(resourceKey)}
-  >{selected ? <Minus size={13} aria-hidden /> : <Plus size={13} aria-hidden />}{selected ? '빼기' : '추가'}</button>;
+  >{selected ? <Minus size={13} aria-hidden /> : <Plus size={13} aria-hidden />}{selected ? '빼기' : '추가'}</button></div>;
 }
 
 /** Brings an observed resource's card into view; with up to eight cards the chip doubles as navigation. */

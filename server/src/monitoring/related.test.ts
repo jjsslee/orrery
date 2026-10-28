@@ -43,17 +43,19 @@ test('background graph collection is shared and returns loading immediately',asy
  assert.equal((await repo.read(s,true)).state.state,'complete');
 });
 
-test('a newer partial cached graph preserves previously discovered relationships',async()=>{
+test('a newer partial cached graph separates unverified relationships into history',async()=>{
  let cached=graph();
  const repo=new MonitoringGraphRepository({getCached:async()=>cached,collect:async()=>cached});
  await repo.read(s);
  cached={...graph(),collectedAt:new Date(Date.now()+1).toISOString(),nodes:[graph().nodes[0]],edges:[],reports:[{collector:'edge',ok:false,nodes:0,edges:0,durationMs:1,error:'AccessDenied'}]};
  const result=await repo.read(s);
  assert.equal(result.state.state,'partial');
- assert.equal(result.graph?.edges.length,3);
+ assert.equal(result.graph?.edges.length,0);
+ assert.equal(result.graph?.relationshipHistory?.length,3);
+ assert.ok(result.graph?.relationshipHistory?.every(e => e.observation?.state === 'unverified'));
 });
 
-test('failed refresh preserves prior candidates and does not silently report no relationship',async()=>{
+test('failed refresh keeps prior relationships as unverified history',async()=>{
  const previous={...graph(),collectedAt:new Date(Date.now()-20*60_000).toISOString()};
  let calls=0;
  const repo=new MonitoringGraphRepository({getCached:async()=>previous,collect:async()=>{calls++;throw Object.assign(new Error('denied'),{name:'AccessDenied'});}});
@@ -63,7 +65,9 @@ test('failed refresh preserves prior candidates and does not silently report no 
  assert.equal(result.state.state,'error');
  assert.equal(result.state.stale,true);
  assert.equal(result.state.observation?.errorCode,'AccessDenied');
- assert.equal(result.graph?.edges.length,3);
+ assert.equal(result.graph?.edges.length,0);
+ assert.equal(result.graph?.relationshipHistory?.length,3);
+ assert.ok(result.graph?.relationshipHistory?.every(e => e.observation?.state === 'unverified'));
  assert.equal(calls,1);
 });
 

@@ -18,6 +18,7 @@ import { mergeStatus, preserveAlarmSnapshot } from './graph/status.ts';
 import { AlarmRepository, graphAlarmInfos } from './monitoring/alarms.ts';
 import { registerMonitoringRoutes } from './monitoring/routes.ts';
 import { assembleGraph } from './graph/assemble.ts';
+import { reconcileGraph } from './monitoring/observations.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
 import { createApiToken, registerLocalSecurity, SECURITY_HEADERS } from './http/security.ts';
@@ -108,7 +109,7 @@ async function session(query: Record<string, unknown>): Promise<Session> {
 }
 
 const alarmRepository = new AlarmRepository();
-registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v8', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
+registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v9', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
 
 async function alarmOutput(s: Session) {
   const started = Date.now();
@@ -116,13 +117,21 @@ async function alarmOutput(s: Session) {
   return { observation: snapshot.observation, output: { nodes: [], edges: [], alarms: graphAlarmInfos(snapshot.alarms) }, report: { collector: 'alarms', ok: snapshot.complete, durationMs: Date.now() - started, nodes: 0, edges: 0, error: snapshot.observation.error } };
 }
 
-const graphKey = (s: Pick<Session, 'source' | 'account' | 'region'>) => scopeKey('graph-v8', s.source, s.account, s.region);
+const graphKey = (s: Pick<Session, 'source' | 'account' | 'region'>) => scopeKey('graph-v9', s.source, s.account, s.region);
 registerCleanupRoutes(app, session, (s) => cache.get<ResourceGraph>(graphKey(s), GRAPH_TTL));
 
-async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Promise<ResourceGraph> {
+const collecting = new Map<string, {promise:Promise<ResourceGraph>; listeners:Set<(e:CollectEvent)=>void>}>();
+function collectGraph(s: Session, onEvent?: (e:CollectEvent)=>void):Promise<ResourceGraph> {
+  const key=graphKey(s), existing=collecting.get(key);
+  if(existing){if(onEvent)existing.listeners.add(onEvent);return existing.promise;}
+  const listeners=new Set<(e:CollectEvent)=>void>();if(onEvent)listeners.add(onEvent);
+  const promise=collectGraphOnce(s,e=>{for(const listener of listeners)listener(e);}).finally(()=>collecting.delete(key));
+  collecting.set(key,{promise,listeners});return promise;
+}
+async function collectGraphOnce(s: Session, onEvent?: (e: CollectEvent) => void): Promise<ResourceGraph> {
   const previous = await cache.get<ResourceGraph>(graphKey(s), Infinity);
   onEvent?.({ type: 'start', collectors: Object.keys(collectorLabels()), account: s.account, region: s.region });
-  const { outputs, reports } = await runCollectors(
+  const { outputs, reports, budget } = await runCollectors(
     { region: s.region, account: s.account, clients: s.clients, log: (m) => app.log.warn(m) },
     (report) => onEvent?.({ type: 'collector', report }),
     Object.keys(collectorLabels()).filter((name) => name !== 'alarms'),
@@ -131,11 +140,12 @@ async function collectGraph(s: Session, onEvent?: (e: CollectEvent) => void): Pr
   outputs.push(alarm.output);
   reports.push(alarm.report);
   onEvent?.({ type: 'collector', report: alarm.report });
-  const graph = assembleGraph(outputs, reports, { account: s.account, region: s.region, source: s.source });
+  const graph = reconcileGraph(assembleGraph(outputs, reports, { account: s.account, region: s.region, source: s.source }), previous);
   const alarmReport = reports.find((r) => r.collector === 'alarms');
   graph.alarmObservation = alarm.observation;
+  graph.collectionBudget = budget;
   if (!alarmReport?.ok) preserveAlarmSnapshot(graph, previous);
-  await cache.set(graphKey(s), graph);
+  if (!await cache.set(graphKey(s), graph)) graph.historyPersistenceError = '디스크에 저장하지 못했습니다. 이번 실행의 메모리에서만 유지합니다.';
   return graph;
 }
 
@@ -224,7 +234,7 @@ app.get<{ Querystring: Record<string, string> }>('/api/status', async (req) => {
   const s = await session(req.query);
   const started = Date.now();
   const graph = (await cache.get<ResourceGraph>(graphKey(s), GRAPH_TTL)) ?? (await collectGraph(s));
-  const { outputs, reports } = await runCollectors(
+  const { outputs, reports, budget } = await runCollectors(
     { region: s.region, account: s.account, clients: s.clients, log: (m) => app.log.warn(m) },
     undefined,
     STATUS_COLLECTORS,

@@ -166,6 +166,18 @@ export function queriesForNode(node: ResourceNode): MetricQuery[] {
       if (kind === 'network') return q(NLB, [dim('LoadBalancer', lb)]);
       return [];
     }
+    case 'target-group': {
+      const arn = str(node.props._metricLoadBalancerArn);
+      const lb = arn ? lbDimension(arn) : undefined;
+      const tg = id.match(/:targetgroup\/(.+)$/)?.[1];
+      if (!lb?.startsWith('app/') || !tg) return [];
+      return q(specs('AWS/ApplicationELB', [
+        {metric:'HealthyHostCount',stat:'Minimum',label:'정상 대상 최솟값',unit:'count'},
+        {metric:'UnHealthyHostCount',stat:'Maximum',label:'비정상 대상 최댓값',unit:'count'},
+        {metric:'HTTPCode_Target_5XX_Count',stat:'Sum',label:'대상 5xx 오류',unit:'count'},
+        {metric:'TargetResponseTime',stat:'p95',label:'대상 응답 시간 p95',unit:'s'},
+      ]), [dim('LoadBalancer',lb),dim('TargetGroup',`targetgroup/${tg}`)]);
+    }
     case 'ec2-instance': return q(EC2, [dim('InstanceId', id)]);
     case 'rds-instance': return q(RDS_INSTANCE, [dim('DBInstanceIdentifier', id)]);
     case 'rds-cluster': return q(RDS_CLUSTER, [dim('DBClusterIdentifier', id)]);

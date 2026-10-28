@@ -109,3 +109,21 @@ test('metric cache separates accounts, auth sources, statistics and current reso
   assert.equal(sends, 5);
 });
 test('monitoring preserves message-free Forbidden and thrown ExpiredToken codes',async()=>{const repo=new MetricsRepository();const request={...body(),metricIds:['Invocations:Sum']};const denied=await repo.get(session(async()=>({MetricDataResults:[{Id:'q0',StatusCode:'Forbidden'}]})),request,[resource('one')]);assert.equal(denied.series.one[0].awsStatus,'Forbidden');const expired=await new MetricsRepository().get(session(async()=>{throw Object.assign(new Error('expired'),{name:'ExpiredToken'});}),request,[resource('one')]);assert.equal(expired.series.one[0].errorCode,'ExpiredToken');});
+test('target group requires a known ALB context and uses documented dimensions/statistics', async () => {
+ const lb='arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123';
+ const tg={...resource('tg','target-group'),nativeId:'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:targetgroup/dummy/456',metricContexts:[{id:lb,label:'dummy',loadBalancerArn:lb,region:'ap-northeast-2'}]};
+ assert.throws(()=>planMetrics(body(['tg']),[tg],now),/ALB/);
+ assert.throws(()=>planMetrics({...body(['tg']),contexts:{tg:'foreign'}},[tg],now),/ALB/);
+ const plans=planMetrics({...body(['tg']),contexts:{tg:lb}},[tg],now);
+ assert.deepEqual(plans.map(p=>[p.query.spec.metric,p.query.spec.stat]),[['HealthyHostCount','Minimum'],['UnHealthyHostCount','Maximum'],['HTTPCode_Target_5XX_Count','Sum'],['TargetResponseTime','p95']]);
+ for(const p of plans){assert.equal(p.query.spec.namespace,'AWS/ApplicationELB'); assert.deepEqual(p.query.dims,[{Name:'LoadBalancer',Value:'app/dummy/123'},{Name:'TargetGroup',Value:'targetgroup/dummy/456'}]);}
+});
+test('TG response identity can be used to select the exact namespace/dimensions/stat/region query',async()=>{
+ const lb='arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:loadbalancer/app/dummy/123';
+ const tg={...resource('tg','target-group'),nativeId:'arn:aws:elasticloadbalancing:ap-northeast-2:000000000000:targetgroup/dummy/456',metricContexts:[{id:lb,label:'dummy',loadBalancerArn:lb,region:'ap-northeast-2'}]};
+ const request={...body(['tg']),contexts:{tg:lb}};
+ const repo=new MetricsRepository();const s=session(async(c)=>({MetricDataResults:c.input.MetricDataQueries.map((q:any)=>({Id:q.Id,StatusCode:'Complete',Timestamps:[],Values:[]}))}));
+ const all=await repo.get(s,request,[tg]);
+ const selected=await repo.get(s,{...request,metricIds:[all.series.tg[0].id]},[tg]);
+ assert.equal(selected.queryCount,1);assert.equal(selected.series.tg.length,1);assert.equal(selected.series.tg[0].id,all.series.tg[0].id);
+});

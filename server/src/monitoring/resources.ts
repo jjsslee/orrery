@@ -1,7 +1,8 @@
 import { LambdaClient, ListFunctionsCommand, ListTagsCommand } from '@aws-sdk/client-lambda';
 import { SQSClient, ListQueuesCommand, ListQueueTagsCommand } from '@aws-sdk/client-sqs';
 import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand, DescribeTagsCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
-import { ECSClient, ListClustersCommand, ListServicesCommand, DescribeServicesCommand } from '@aws-sdk/client-ecs';
+import { readEcsServices } from '../collectors/ecs-services.ts';
+import { ECSClient, ListClustersCommand, ListServicesCommand } from '@aws-sdk/client-ecs';
 import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { RDSClient, DescribeDBInstancesCommand, ListTagsForResourceCommand } from '@aws-sdk/client-rds';
 import type { MonitoringResource, MonitoringResourceIndex, MonitoringResourceType, ResourceGraph } from '@orrery/shared';
@@ -71,9 +72,8 @@ export async function listMonitoringResources(s: MonitoringSession, type: Monito
               const page = await client.send(new ListServicesCommand({ cluster, nextToken: servicesToken }));
               const arns = page.serviceArns ?? [];
               for (let i = 0; i < arns.length; i += 10) {
-                const described = await client.send(new DescribeServicesCommand({ cluster, services: arns.slice(i, i + 10), include: ['TAGS'] }));
-                for (const failure of described.failures ?? []) errors.push(`${failure.arn ?? cluster}: ${failure.reason ?? 'DescribeServices 실패'}`);
-                for (const service of described.services ?? []) if (service.serviceName) {
+                const described = await readEcsServices(client, cluster, arns.slice(i, i + 10), message => errors.push(message));
+                for (const service of described) if (service.serviceName) {
                   const name = `${cluster.split('/').pop()}/${service.serviceName}`;
                   add(name, name, service.serviceArn, Object.fromEntries((service.tags ?? []).filter((t) => t.key).map((t) => [t.key!, t.value ?? ''])), {}, service.tags ? 'complete' : 'unavailable');
                 }
@@ -113,10 +113,12 @@ export async function listMonitoringResources(s: MonitoringSession, type: Monito
 
 export function graphResources(graph: ResourceGraph): MonitoringResource[] {
   return graph.nodes.filter((node) => node.type !== 'region').map((node) => {
-    const queries = queriesForNode(node);
+    const loadBalancers: unknown = (() => { try { return JSON.parse(String(node.props._applicationLoadBalancers ?? '[]')); } catch { return []; } })();
+    const metricContexts = node.type === 'target-group' && Array.isArray(loadBalancers) ? loadBalancers.filter((arn): arn is string => typeof arn === 'string' && arn.startsWith(`arn:aws:elasticloadbalancing:${graph.region}:${graph.account}:loadbalancer/app/`)).map(arn => ({id:arn,label:graph.nodes.find(n => n.arn === arn)?.name ?? arn,loadBalancerArn:arn,region:graph.region})) : undefined;
+    const queries = queriesForNode(metricContexts?.length ? {...node,props:{...node.props,_metricLoadBalancerArn:metricContexts[0].loadBalancerArn}} : node);
     const metricsSupported = queries.length > 0;
     const otherRegion = queries.find((q) => q.region && q.region !== graph.region)?.region;
-    return { key: resourceKey(graph.account, graph.region, node.type, node.nativeId), nodeId: node.id, type: node.type, nativeId: node.nativeId, name: node.name, region: node.region, arn: node.arn, tags: node.tags, tagsStatus: node.tags ? 'complete' as const : 'unavailable' as const, props: node.props, metricsSupported, alarmMappingSupported: metricsSupported, alarmScopeWarning: otherRegion ? `지표는 ${otherRegion}에서 조회합니다. 경보 목록은 선택 리전 ${graph.region} 범위이므로 해당 지표 리전의 경보를 포함하지 않을 수 있습니다.` : metricsSupported ? undefined : '이 유형의 경보·자원 연결을 해석하지 못합니다.', metricsUnsupportedReason: metricsSupported ? undefined : '이 유형의 CloudWatch 지표 프리셋은 아직 지원하지 않습니다.' };
+    return { key: resourceKey(graph.account, graph.region, node.type, node.nativeId), nodeId: node.id, type: node.type, nativeId: node.nativeId, name: node.name, region: node.region, arn: node.arn, tags: node.tags, tagsStatus: node.tags ? 'complete' as const : 'unavailable' as const, props: node.props, metricContexts, metricsSupported, alarmMappingSupported: metricsSupported, alarmScopeWarning: otherRegion ? `지표는 ${otherRegion}에서 조회합니다. 경보 목록은 선택 리전 ${graph.region} 범위이므로 해당 지표 리전의 경보를 포함하지 않을 수 있습니다.` : metricsSupported ? undefined : '이 유형의 경보·자원 연결을 해석하지 못합니다.', metricsUnsupportedReason: metricsSupported ? undefined : '이 유형의 CloudWatch 지표 프리셋은 아직 지원하지 않습니다.' };
   });
 }
 
@@ -145,7 +147,7 @@ export class ResourceRepository {
   }
   known(s: MonitoringSession): MonitoringResource[] {
     const map = new Map((this.graphs.get(scopeKey('resources:graph', s.source, s.account, s.region)) ?? []).map((r) => [r.key, r]));
-    for (const t of MONITORING_TYPES) for (const resource of this.values.get(scopeKey(`resources:${t}`, s.source, s.account, s.region))?.resources ?? []) map.set(resource.key, { ...resource, metricsSupported: true });
+    for (const t of MONITORING_TYPES) for (const resource of this.values.get(scopeKey(`resources:${t}`, s.source, s.account, s.region))?.resources ?? []) map.set(resource.key, { ...map.get(resource.key), ...resource, props: { ...map.get(resource.key)?.props, ...resource.props }, metricsSupported: true });
     return [...map.values()];
   }
 }

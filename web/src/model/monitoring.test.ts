@@ -153,3 +153,28 @@ test('explicit resource refresh reaches each resource API as refresh=1 while ini
  globalThis.fetch=async(url,options)=>{urls.push(new URL(String(url),'http://localhost'));assert.ok(options?.signal instanceof AbortSignal);return new Response(JSON.stringify({scope,observation,complete:true,types:[urls.at(-1)!.searchParams.get('type')],resources:[]}),{status:200,headers:{'content-type':'application/json'}});};api.monitoringAlarms=async()=>({scope,observation,complete:true,alarms:[]});
  try{useMonitoring.setState({profile:'test',region:scope.region,alarms:{scope,observation,complete:true,alarms:[]}});await useMonitoring.getState().loadResourceTypes(['lambda','sqs-queue'],true);assert.equal(urls.length,2);assert.ok(urls.every(url=>url.searchParams.get('refresh')==='1'));await useMonitoring.getState().loadResources('lambda');assert.equal(urls[2].searchParams.has('refresh'),false);}finally{useMonitoring.getState().deactivate();globalThis.fetch=originalFetch;api.monitoringAlarms=originalAlarms;}
 });
+
+test('context-only candidates cannot consume slots and TG requires explicit context', () => {
+ const initial=useMonitoring.getState();
+ const base={key:'context',nodeId:'context',type:'security-group' as const,name:'fixture',nativeId:'context',region:scope.region,props:{},tagsStatus:'complete' as const,metricsSupported:false};
+ const tg={...base,key:'tg',nodeId:'tg',type:'target-group' as const,metricsSupported:true,metricContexts:[{id:'dummy-alb',label:'dummy',loadBalancerArn:'dummy-alb',region:scope.region}]};
+ try {
+ useMonitoring.setState({selectedResources:[],metricContexts:{},resources:{scope,resources:[base,tg],types:[],complete:true,observation}});
+ useMonitoring.getState().toggleResource('context');assert.equal(useMonitoring.getState().selectedResources.length,0);
+ useMonitoring.getState().toggleResource('tg');assert.equal(useMonitoring.getState().selectedResources.length,0);
+ useMonitoring.getState().setMetricContext('tg','dummy-alb');useMonitoring.getState().toggleResource('tg');assert.deepEqual(useMonitoring.getState().selectedResources,['tg']);
+ }finally{useMonitoring.setState(initial);}
+});
+
+test('partial graph diagnostics do not become a failed related request',async()=>{
+ const original={...api};
+ const resource={key:'a',nodeId:'a',nativeId:'a',name:'dummy',type:'lambda' as const,region:scope.region,tagsStatus:'complete' as const,props:{}};
+ api.monitoringRelated=async()=>({scope,resourceKey:'a',connected:[{resource,reasons:[]}],sameTags:[],graph:{state:'partial',observation:{...observation,error:'AccessDenied: dummy ECR tags'}},tagCoverage:{types:[],incompleteTypes:[]}});
+ try {
+ useMonitoring.setState({profile:'test',region:scope.region,referenceResource:'a',resources:{scope,resources:[resource],types:['lambda'],complete:true,observation}});
+ await useMonitoring.getState().loadRelated(false);
+ assert.equal(useMonitoring.getState().relatedError,undefined);
+ assert.equal(useMonitoring.getState().related?.connected.length,1);
+ assert.match(useMonitoring.getState().related?.graph.observation?.error ?? '',/AccessDenied/);
+ }finally{useMonitoring.getState().deactivate();Object.assign(api,original);}
+});

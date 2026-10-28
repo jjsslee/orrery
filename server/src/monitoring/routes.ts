@@ -1,3 +1,4 @@
+import { buildMonitoringPath, pathOptions } from './paths.ts';
 import { MonitoringGraphRepository, relatedCandidates, type MonitoringGraphProvider } from './related.ts';
 import { MetricsRepository } from './metrics.ts';
 import type { FastifyInstance } from 'fastify';
@@ -22,13 +23,18 @@ export function registerMonitoringRoutes(app: FastifyInstance, session: (query: 
   app.get<{ Querystring: Record<string, string> }>('/api/monitoring/related', async (req) => {
     const s = await session(req.query);
     const [key] = validateKeys(s, [req.query.resourceKey]);
+    const options = pathOptions(req.query);
     if (req.query.refresh === '1') graphs.retry(s);
     const graph = await graphs.read(s, req.query.connections === '1');
     if (graph.graph) resources.includeGraph(s, graph.graph);
     const known = resources.known(s);
     const base = known.find((resource) => resource.key === key);
     if (!base) return { scope: scope(s), resourceKey: key, connected: [], sameTags: [], graph: graph.state, tagCoverage: resources.coverage(s), error: '기준 자원을 아직 확인하지 못했습니다. 자원 목록을 갱신하세요.' };
-    return { scope: scope(s), resourceKey: key, ...relatedCandidates(base, known, graph.graph), graph: graph.state, tagCoverage: resources.coverage(s) };
+    const historicalGraph = graph.graph ? { ...graph.graph, nodes: [...graph.graph.nodes, ...(graph.graph.historicalNodes ?? [])], edges: graph.graph.relationshipHistory ?? [] } : undefined;
+    return { scope: scope(s), resourceKey: key, ...relatedCandidates(base, known, graph.graph), historical: relatedCandidates(base, known, historicalGraph).connected,
+      collectionBudget: graph.graph?.collectionBudget, historyPersistenceError:graph.graph?.historyPersistenceError, coverage:graph.graph?.coverage,
+      path: graph.graph ? buildMonitoringPath(graph.graph, base.nodeId, options) : undefined,
+      changes: graph.graph?.relationshipChanges?.filter(c => c.source === base.nodeId || c.target === base.nodeId), graph: graph.state, tagCoverage: resources.coverage(s) };
   });
   app.post<{ Querystring: Record<string, string>; Body: { resourceKeys?: unknown } }>('/api/monitoring/resources/resolve', async (req) => {
     const s = await session(req.query);

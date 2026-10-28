@@ -22,13 +22,15 @@ interface MonitoringState {
   pauseRequests(includeRelated?: boolean): void;
   workspaceActive: boolean; groups: SavedResourceGroup[]; groupsError?: string;
   referenceResource?: string; related?: MonitoringRelatedSnapshot; relatedLoading: boolean; relatedError?: string;
-  setReferenceResource(key: string): void; loadRelated(refresh?: boolean): Promise<void>;
+  relatedDepth: number; relatedGroup: 'execution' | 'context'; setRelatedOptions(depth: number, group: 'execution' | 'context'): void;
+  setReferenceResource(key: string): void; loadRelated(refresh?: boolean, nextPage?: boolean): Promise<void>;
   saveSelection(name: string): void; restoreGroup(id: string): Promise<void>;
   restoreNotice?: string; restoreCandidates: string[]; restoreMissingKeys: string[];
   resourceFilters: ResourceFilters;
   loadResourceTypes(types: MonitoringResourceType[], refresh?: boolean): Promise<void>;
   resourceCoverage: Partial<Record<MonitoringResourceType, ObservationState & { complete: boolean }>>;
   saveGroup(group: SavedResourceGroup): void; deleteGroup(id: string): void;
+  metricContexts: Record<string,string>; setMetricContext(key:string, id:string): void;
   selectedResources: string[]; metrics?: MonitoringMetricsSnapshot; metricsLoading: boolean; metricsError?: string;
   toggleResource(key: string): void; loadMetrics(refresh?: boolean): Promise<void>;
   alarms?: MonitoringAlarmSnapshot; alarmLoading: boolean; alarmError?: string;
@@ -54,12 +56,19 @@ function request(key: string) { controllers.get(key)?.abort(); const c = new Abo
 export const useMonitoring = create<MonitoringState>((set, get) => ({
   autoRefresh: 0, resourceFilters: emptyResourceFilters(), workspaceActive: false, relatedLoading: false, restoreCandidates: [], restoreMissingKeys: [],
   groups: [], resourceCoverage: {},
+  metricContexts: {},
+  setMetricContext(key,id) {
+    if (!get().resources?.resources.find(r => r.key === key)?.metricContexts?.some(c => c.id === id)) return;
+    const selected = get().selectedResources.includes(key);
+    if (selected) controllers.get('metrics')?.abort();
+    set({metricContexts:{...get().metricContexts,[key]:id},...(selected ? {metrics:undefined,metricsLoading:false} : {})});
+  },
   selectedResources: [], metricsLoading: false,
   profile: '', region: '', alarmLoading: false, resourceLoading: false, historyLoading: false, range: '3h', customStart: '', customEnd: '',
   activate(profile, region) {
     cancel();
     const changed = get().profile !== profile || get().region !== region;
-    set({ profile, region, workspaceActive: Boolean(profile && region), alarmLoading: false, resourceLoading: false, historyLoading: false, metricsLoading: false, ...(changed ? { scopeNotice: undefined, resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, groups: [], resourceCoverage: {}, selectedResources: [], metrics: undefined, metricsError: undefined, alarms: undefined, resources: undefined, history: undefined, selectedAlarm: undefined, alarmError: undefined, resourceError: undefined, historyError: undefined } : {}) });
+    set({ profile, region, workspaceActive: Boolean(profile && region), alarmLoading: false, resourceLoading: false, historyLoading: false, metricsLoading: false, ...(changed ? { scopeNotice: undefined, resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, groups: [], resourceCoverage: {}, selectedResources: [], metricContexts: {}, metrics: undefined, metricsError: undefined, alarms: undefined, resources: undefined, history: undefined, selectedAlarm: undefined, alarmError: undefined, resourceError: undefined, historyError: undefined } : {}) });
     if (profile && region) { void get().loadAlarms(); void get().loadResourceTypes(MONITORING_RESOURCE_TYPES.map(([type]) => type)); if (!changed && get().referenceResource) void get().loadRelated(false); if (!changed && get().selectedAlarm && !get().history && !get().historyLoading) void get().loadHistory(); }
   },
   pauseRequests(includeRelated = true) { for (const key of (includeRelated ? ['metrics', 'alarms', 'related'] : ['metrics', 'alarms'])) controllers.get(key)?.abort(); if (includeRelated) { controllers.get('history')?.abort(); clearHistoryTimer(); } if (includeRelated && relatedTimer) clearTimeout(relatedTimer); if (includeRelated) relatedTimer = undefined; set({ metricsLoading: false, alarmLoading: false, ...(includeRelated ? { relatedLoading: false, historyLoading: false } : {}) }); },
@@ -91,7 +100,7 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
         const previous = changedAccount ? undefined : get().resources;
         const items = new Map(previous?.resources.filter((item) => !resources.complete || item.type !== type).map((item) => [item.key, item]));
         for (const item of resources.resources) items.set(item.key, item);
-        set({ ...(changedAccount ? { scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, alarms: undefined, selectedAlarm: undefined, selectedResources: [], metrics: undefined, history: undefined, resourceLoading: false, metricsLoading: false, alarmLoading: false, historyLoading: false, groups: readGroups(resources.scope),  } : {}), resources: { ...resources, resources: [...items.values()], types: [...new Set([...(previous?.types ?? []), ...resources.types])], complete: Object.values(coverage).every((entry) => entry.complete) }, groups: !oldScope ? readGroups(resources.scope) : (changedAccount ? readGroups(resources.scope) : get().groups), resourceCoverage: coverage, resourceError: resources.observation.error });
+        set({ ...(changedAccount ? { scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, alarms: undefined, selectedAlarm: undefined, selectedResources: [], metricContexts: {}, metrics: undefined, history: undefined, resourceLoading: false, metricsLoading: false, alarmLoading: false, historyLoading: false, groups: readGroups(resources.scope),  } : {}), resources: { ...resources, resources: [...items.values()], types: [...new Set([...(previous?.types ?? []), ...resources.types])], complete: Object.values(coverage).every((entry) => entry.complete) }, groups: !oldScope ? readGroups(resources.scope) : (changedAccount ? readGroups(resources.scope) : get().groups), resourceCoverage: coverage, resourceError: resources.observation.error });
         const reference = get().referenceResource;
         if (reference && get().related) { const index = get().resources?.resources ?? []; set({ related: { ...get().related!, sameTags: mergeRelatedCandidates(get().related!.sameTags, sameTagCandidates(index.find((item) => item.key === reference), index)) } }); }
         void get().loadAlarms();
@@ -107,6 +116,12 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
       await get().loadResources(type, refresh);
     }
   },
+  relatedDepth: 1, relatedGroup: 'execution',
+  setRelatedOptions(depth, group) {
+    if (!Number.isInteger(depth) || depth < 1 || depth > 3) return;
+    set({ relatedDepth: depth, relatedGroup: group });
+    void get().loadRelated(false);
+  },
   setReferenceResource(key) {
     controllers.get('related')?.abort(); if (relatedTimer) clearTimeout(relatedTimer);
     const resources = get().resources?.resources ?? [], scope = get().resources?.scope ?? get().alarms?.scope;
@@ -114,21 +129,22 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
     set({ referenceResource: key, relatedError: undefined, related: { scope, resourceKey: key, connected: [], sameTags: sameTagCandidates(resources.find((resource) => resource.key === key), resources), graph: { state: 'not-requested' }, tagCoverage: { types: get().resources?.types ?? [], incompleteTypes: MONITORING_RESOURCE_TYPES.map(([type]) => type).filter((type) => !get().resourceCoverage[type]?.complete) } } });
     void get().loadRelated(false);
   },
-  async loadRelated(refresh = true) {
+  async loadRelated(refresh = true, nextPage = false) {
     const { profile, region, referenceResource } = get(); if (!referenceResource || !region) return;
     if (relatedTimer) clearTimeout(relatedTimer);
     const r = request('related'); set({ relatedLoading: true, relatedError: undefined });
     try {
-      const related = await api.monitoringRelated(profile, region, referenceResource, r.signal, refresh);
+      const related = await api.monitoringRelated(profile, region, referenceResource, r.signal, refresh, get().relatedDepth, get().relatedGroup, nextPage ? get().related?.path?.nextOffset : 0, nextPage ? get().related?.path?.revision : undefined);
       if (!r.current()) return;
       const scope = get().resources?.scope ?? get().alarms?.scope;
-      if (scope && !sameScope(scope, related.scope)) { cancel(); set({ referenceResource: undefined, related: undefined, relatedLoading: false, selectedResources: [], metrics: undefined, metricsLoading: false, resourceFilters: emptyResourceFilters(), resources: undefined, resourceCoverage: {}, alarms: undefined, history: undefined, selectedAlarm: undefined, autoRefresh: 0, groups: readGroups(related.scope), restoreCandidates: [], restoreMissingKeys: [], scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', resourceLoading: false, alarmLoading: false, historyLoading: false, metricsError: undefined, alarmError: undefined, historyError: undefined, resourceError: undefined, restoreNotice: undefined }); return; }
+      if (scope && !sameScope(scope, related.scope)) { cancel(); set({ referenceResource: undefined, related: undefined, relatedLoading: false, selectedResources: [], metricContexts: {}, metrics: undefined, metricsLoading: false, resourceFilters: emptyResourceFilters(), resources: undefined, resourceCoverage: {}, alarms: undefined, history: undefined, selectedAlarm: undefined, autoRefresh: 0, groups: readGroups(related.scope), restoreCandidates: [], restoreMissingKeys: [], scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', resourceLoading: false, alarmLoading: false, historyLoading: false, metricsError: undefined, alarmError: undefined, historyError: undefined, resourceError: undefined, restoreNotice: undefined }); return; }
       const index = get().resources;
       const items = new Map(index?.resources.map((resource) => [resource.key, resource]));
       for (const candidate of [...related.connected, ...related.sameTags]) items.set(candidate.resource.key, candidate.resource);
+      for (const resource of related.path?.nodes ?? []) items.set(resource.key, resource);
       const resources = [...items.values()];
       const hasNewResources = resources.length !== (index?.resources.length ?? 0);
-      set({ related: { ...related, sameTags: mergeRelatedCandidates(related.sameTags, sameTagCandidates(resources.find((resource) => resource.key === referenceResource), resources)) }, relatedError: related.error ?? related.graph.observation?.error, ...(index ? { resources: { ...index, resources } } : {}) });
+      set({ related: { ...related, sameTags: mergeRelatedCandidates(related.sameTags, sameTagCandidates(resources.find((resource) => resource.key === referenceResource), resources)) }, relatedError: related.error, ...(index ? { resources: { ...index, resources } } : {}) });
       if (hasNewResources) void get().loadAlarms();
       if (related.graph.state === 'loading') relatedTimer = setTimeout(() => { if (r.current() && get().workspaceActive) void get().loadRelated(false); }, 2000);
     } catch (error) { if (r.current()) set({ relatedError: (error as Error).message }); }
@@ -149,14 +165,16 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
       const found = group.resourceKeys.length ? await api.monitoringResolve(profile, region, group.resourceKeys, r.signal) : { scope: currentScope, resources: [], unresolvedKeys: [], graph: { state: 'not-requested' as const } };
       if (!r.current()) return;
       const scope = get().resources?.scope ?? get().alarms?.scope;
-      if (scope && !sameScope(scope, found.scope)) { cancel(); set({ scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', restoreNotice: '계정이 바뀌어 복원을 중단했습니다. 다시 연결하세요.', selectedResources: [], metrics: undefined, metricsError: undefined, metricsLoading: false, resources: undefined, resourceCoverage: {}, resourceLoading: false, resourceError: undefined, alarms: undefined, alarmError: undefined, alarmLoading: false, selectedAlarm: undefined, history: undefined, historyWindow: undefined, historyError: undefined, historyLoading: false, referenceResource: undefined, related: undefined, relatedError: undefined, relatedLoading: false, autoRefresh: 0, resourceFilters: emptyResourceFilters(), groups: readGroups(found.scope), groupsError: undefined, restoreCandidates: [], restoreMissingKeys: [] }); return; }
+      if (scope && !sameScope(scope, found.scope)) { cancel(); set({ scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', restoreNotice: '계정이 바뀌어 복원을 중단했습니다. 다시 연결하세요.', selectedResources: [], metricContexts: {}, metrics: undefined, metricsError: undefined, metricsLoading: false, resources: undefined, resourceCoverage: {}, resourceLoading: false, resourceError: undefined, alarms: undefined, alarmError: undefined, alarmLoading: false, selectedAlarm: undefined, history: undefined, historyWindow: undefined, historyError: undefined, historyLoading: false, referenceResource: undefined, related: undefined, relatedError: undefined, relatedLoading: false, autoRefresh: 0, resourceFilters: emptyResourceFilters(), groups: readGroups(found.scope), groupsError: undefined, restoreCandidates: [], restoreMissingKeys: [] }); return; }
       const old = get().resources, items = new Map(old?.resources.map((resource) => [resource.key, resource]));
       for (const resource of found.resources) items.set(resource.key, resource);
       const resources = [...items.values()];
-      const candidates = groupResources(group, resources).map((resource) => resource.key);
+      const candidates = groupResources(group, group.tagFilters.length ? resources : found.resources).filter(resource => resource.metricsSupported !== false && resource.type !== 'target-group').map(resource => resource.key);
+      const skipped = found.resources.filter(r => r.metricsSupported === false || r.type === 'target-group');
       const legacyTooLarge = group.resourceKeys.length > MAX_OBSERVED || candidates.length > MAX_OBSERVED;
       controllers.get('metrics')?.abort(); controllers.get('related')?.abort(); if (relatedTimer) clearTimeout(relatedTimer);
       set({ resources: old ? { ...old, resources } : { scope: found.scope, resources, types: [], complete: false, observation: { attemptedAt: new Date().toISOString() } }, selectedResources: legacyTooLarge ? [] : candidates, metrics: undefined, metricsLoading: false, referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreCandidates: legacyTooLarge ? candidates : [], restoreMissingKeys: found.unresolvedKeys, restoreNotice: legacyTooLarge ? `저장된 구성의 대상이 ${MAX_OBSERVED}개를 넘습니다. 후보 ${candidates.length}개에서 최대 ${MAX_OBSERVED}개를 직접 선택하세요. 원래 구성은 보존됩니다.` : found.unresolvedKeys.length ? `자원 ${found.unresolvedKeys.length}개를 아직 확인하지 못했습니다. 관계 수집 상태를 확인한 뒤 다시 복원하세요.` : !candidates.length ? '현재 조회 범위에 일치하는 자원이 없습니다. 자원 목록을 확인한 뒤 다시 복원하세요.' : `구성 '${group.name}'을 복원했습니다.` });
+      if (skipped.length) set({restoreNotice: `${get().restoreNotice} 구성 전용 또는 ALB 맥락을 다시 선택해야 하는 자원 ${skipped.length}개는 자동 추가하지 않았습니다.`});
       if (found.resources.length) void get().loadAlarms();
       if (group.tagFilters.length && (MONITORING_RESOURCE_TYPES.some(([type]) => !get().resourceCoverage[type]?.complete) || resources.some((resource) => resource.tagsStatus !== 'complete'))) set({ restoreNotice: `${get().restoreNotice} 태그 조회 범위가 부족하여 아직 확인하지 못한 대상이 있을 수 있습니다.` });
       if (!legacyTooLarge && candidates.length) get().setReferenceResource(candidates[0]);
@@ -176,6 +194,9 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
   },
   toggleResource(key) {
     const selected = get().selectedResources;
+    const resource = get().resources?.resources.find(r => r.key === key);
+    if (!selected.includes(key) && resource?.metricsSupported === false) { set({metricsError:'구성 전용 자원은 지표 비교에 추가하지 않습니다.'}); return; }
+    if (!selected.includes(key) && resource?.type === 'target-group' && !resource.metricContexts?.some(c => c.id === get().metricContexts[key])) { set({metricsError:'Target Group의 연결 ALB를 먼저 선택하세요.'}); return; }
     if (!selected.includes(key) && selected.length >= MAX_OBSERVED) { set({ metricsError: `자원 비교는 최대 ${MAX_OBSERVED}개까지 가능합니다.` }); return; }
     controllers.get('metrics')?.abort();
     const next = selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key];
@@ -190,7 +211,7 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
     const r = request('metrics'); set({ metricsLoading: true, metricsError: undefined });
     try {
       const window = monitoringWindow(range, Date.now(), customStart, customEnd);
-      const metrics = await api.monitoringMetrics(profile, region, metricResources, { startTime: window.start, endTime: window.end }, refresh, r.signal);
+      const metrics = await api.monitoringMetrics(profile, region, metricResources, { startTime: window.start, endTime: window.end }, refresh, r.signal, Object.fromEntries(metricResources.filter(k => get().resources?.resources.find(r => r.key === k)?.type === 'target-group').map(k => [k,get().metricContexts[k]])));
       if (r.current()) {
         const previous = get().alarms?.scope ?? get().resources?.scope;
         if (previous && !sameScope(previous, metrics.scope)) {

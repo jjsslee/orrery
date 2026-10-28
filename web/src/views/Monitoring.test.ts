@@ -49,7 +49,7 @@ test('related candidates retain exact tag evidence, connection direction and pro
   assert.match(html, /fixture-queue 추가/);
   assert.match(html, /Service/); assert.match(html, /fixture-wiki/);
   assert.match(html, /들어오는|기준 자원으로/);
-  assert.match(html, /직접 확인·추정 구분 미제공/);
+  assert.match(html, /근거 미확인/);
   assert.match(html, /일부|부분/);
 });
 
@@ -85,4 +85,15 @@ test('the eight-resource limit is stated before the user hits it: empty tray, re
   assert.match(html, /1\/8/);
   assert.match(html, /7개 더 추가할 수 있습니다/);
   assert.match(html, /최대 8개 자원/);
+});
+
+test('partial collection keeps candidates visible and confines AWS errors to collapsed details', () => {
+  const error = 'AccessDeniedException: dummy-user ecr:ListTagsForResource explicit deny '.repeat(100);
+  const html = render({ referenceResource:'one', relatedError:undefined, related:{scope,resourceKey:'one',connected:[{resource:resource('two','readable-candidate'),reasons:[]}],sameTags:[],graph:{state:'partial',stale:true,observation:{...observed,error}},tagCoverage:{types:[],incompleteTypes:[]}} });
+  assert.match(html,/일부 구성만 확인했습니다/);
+  assert.match(html,/readable-candidate/);
+  assert.doesNotMatch(html,/관련 자원을 확인하지 못했습니다/);
+  assert.match(html,/<details class="mw-collection-errors">/);
+  assert.doesNotMatch(html.replace(/<details\b[^>]*>[\s\S]*?<\/details>/g,''),/dummy-user/);
+  assert.equal(html.match(/dummy-user/g)?.length,100);
 });

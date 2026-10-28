@@ -10,7 +10,8 @@ import { ClientFactory } from '../aws/clients.ts';
 import { isReadOnlyCommand } from '../aws/readonly-guard.ts';
 import type { CollectorContext } from './types.ts';
 import { assembleGraph } from '../graph/assemble.ts';
-import type { ResourceNode } from '@orrery/shared';
+import { attempt, collect } from './util.ts';
+import type { RelationCoverage, ResourceNode } from '@orrery/shared';
 
 const account = '000000000000';
 const region = 'ap-northeast-2';
@@ -99,4 +100,12 @@ test('CloudFront certificate and WAF references are attachments, not origins', (
   const graph = assembleGraph([{ nodes: [cf, node('acm-certificate', 'arn:cert'), node('waf-acl', 'arn:waf')], edges: [] }], [], { account, region, source: 'test' });
   assert.equal(graph.edges.length, 2);
   assert.ok(graph.edges.every((e) => e.kind === 'attached'));
+});
+
+test('a failed second rules page retains first-page evidence without complete coverage',async()=>{
+ const observations:Omit<RelationCoverage,'collector'>[]=[];
+ const ctx={limit:async(fn:()=>Promise<unknown>)=>fn(),log:()=>{},observe:(c:Omit<RelationCoverage,'collector'>)=>observations.push(c)} as unknown as CollectorContext;
+ async function* pages(){yield {rules:['dummy-rule']};throw Object.assign(new Error('dummy denial'),{name:'AccessDenied'});}
+ assert.deepEqual(await attempt(ctx,'rules:dummy',()=>collect(pages(),p=>p.rules)),['dummy-rule']);
+ assert.equal(observations[0].state,'partial');assert.equal(observations[0].succeededAt,undefined);assert.equal(observations[0].errorCode,'AccessDenied');
 });

@@ -788,3 +788,28 @@
 .sso-login-card { position: absolute; z-index: 100; top: calc(100% + 14px); right: 0; width: min(360px, calc(100vw - 32px)); padding: 18px; background: var(--panel); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow-pop); white-space: normal; }
 .sso-login-card p { margin: 10px 0 14px; line-height: 1.5; font-size: 13px; }
 .sso-login-actions { display: flex; gap: 12px; align-items: center; }
+
+/* Relationship evidence stays readable for long rule conditions and ARNs. */
+.mw-relation-evidence { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.mw-condition { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mw-path-options { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 10px; }
+.mw-path-options label { display: flex; gap: 6px; align-items: center; }
+.mw-related details ul { padding-inline-start: 16px; }
+
+.mw-context-select { display:flex; flex-direction:column; gap:6px; max-width:180px; }
+.mw-context-select label { display:flex; flex-direction:column; gap:4px; font-size:var(--fs-xs); color:var(--ink-3); }
+.mw-context-select select { width:100%; min-width:0; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:4px; }
+.mw-change-timeline { padding:16px; border-bottom:1px solid var(--line); }
+.mw-change-timeline svg { width:100%; height:48px; }
+
+.mw-related .mw-row { display:grid; grid-template-columns:22px minmax(0,1fr); align-items:start; }
+.mw-related .mw-row > .mw-row-main { grid-column:2; }
+.mw-related .mw-row > .mw-row-main:first-child { grid-column:1 / -1; }
+.mw-related .mw-row > .mw-context-select, .mw-related .mw-row > button, .mw-related .mw-row > small { grid-column:2; max-width:100%; }
+.mw-related > .mw-hint { padding:8px 16px; }
+.mw-related details ul { padding-left:16px; }
+
+.mw-collection-errors { margin:8px 16px; color:var(--ink-3); font-size:var(--fs-xs); }
+.mw-collection-errors summary { cursor:pointer; }
+.mw-collection-errors pre { max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; padding:10px; border:1px solid var(--line); border-radius:6px; }
+.mw-coverage ul { max-height:240px; overflow:auto; overflow-wrap:anywhere; }

@@ -4,10 +4,15 @@
  */
 import type { CollectorContext } from './types.ts';
 
+export class PartialCollectionError extends Error {
+  constructor(readonly items: unknown[], cause: unknown) { super(errMsg(cause), {cause}); this.name = cause instanceof Error ? cause.name : 'UnknownError'; }
+}
+
 /** Drain an SDK paginator into one array. */
 export async function collect<P, T>(pages: AsyncIterable<P>, pick: (page: P) => T[] | undefined): Promise<T[]> {
   const out: T[] = [];
-  for await (const page of pages) out.push(...(pick(page) ?? []));
+  try { for await (const page of pages) out.push(...(pick(page) ?? [])); }
+  catch (error) { throw new PartialCollectionError(out,error); }
   return out;
 }
 
@@ -21,11 +26,15 @@ export function errMsg(err: unknown): string {
  * whole collector.
  */
 export async function attempt<T>(ctx: CollectorContext, what: string, fn: () => Promise<T>): Promise<T | undefined> {
+  const attemptedAt = new Date().toISOString();
   try {
-    return await ctx.limit(fn);
+    const result = await ctx.limit(fn);
+    ctx.observe?.({ key: what, operation: what, state: 'complete', attemptedAt, succeededAt: new Date().toISOString() });
+    return result;
   } catch (err) {
+    ctx.observe?.({ key: what, operation: what, state: err instanceof PartialCollectionError && err.items.length ? 'partial' : 'failed', attemptedAt, errorCode: err instanceof Error ? err.name : 'UnknownError' });
     ctx.log(`[${what}] ${errMsg(err)}`);
-    return undefined;
+    return err instanceof PartialCollectionError && err.items.length ? err.items as T : undefined;
   }
 }
 

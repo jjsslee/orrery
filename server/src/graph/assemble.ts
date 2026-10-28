@@ -19,9 +19,12 @@ export function assembleGraph(
   reports: CollectorReport[],
   meta: { account: string; region: string; source: string },
 ): ResourceGraph {
+  const collectedAt = new Date().toISOString();
   const nodes = new Map<string, ResourceNode>();
+  const owner = new Map<string, string>();
   for (const out of outputs) {
     for (const n of out.nodes) {
+      if (out.collector) owner.set(n.id, out.collector);
       const existing = nodes.get(n.id);
       if (!existing) {
         nodes.set(n.id, { ...n, props: { ...n.props } });
@@ -50,21 +53,27 @@ export function assembleGraph(
 
   const edges = new Map<string, ResourceEdge>();
   let dropped = 0;
+  const unresolvedEdges: ResourceEdge[] = [];
   const addEdge = (e: ResourceEdge) => {
     if (e.source === e.target) return;
-    if (!nodes.has(e.source) || !nodes.has(e.target)) { dropped++; return; }
-    if (!edges.has(e.id)) edges.set(e.id, e);
+    if (!nodes.has(e.source) || !nodes.has(e.target)) { dropped++; unresolvedEdges.push({...e,id:e.configurationId ?? e.id}); return; }
+    const id = e.configurationId ?? e.id;
+    const existing = edges.get(id);
+    if (!existing) edges.set(id, { ...e, id });
+    else existing.evidence = [...new Map([...(existing.evidence ?? []), ...(e.evidence ?? [])].map(v => [JSON.stringify(v), v])).values()];
   };
-  for (const out of outputs) for (const e of out.edges) addEdge(e);
+  const evidence = (collector: string, method: 'configuration' | 'identifier') => [{ partition: `collector:${collector}`, collector, operation: 'collector', method }];
+  for (const out of outputs) for (const e of out.edges) addEdge({ ...e, evidence: e.evidence ?? (out.collector ? evidence(out.collector, 'configuration') : undefined) });
 
-  for (const e of resolveRefs(nodes, meta)) addEdge(e);
+  for (const e of resolveRefs(nodes, meta)) { const collector = owner.get(e.source); addEdge({ ...e, evidence: e.evidence ?? (collector ? evidence(collector, e.kind === 'references' ? 'identifier' : 'configuration') : undefined) }); }
   applyAlarms(nodes, outputs.flatMap((o) => o.alarms ?? []));
 
   const all = [...nodes.values()];
   for (const n of all) { delete n.refs; delete n.relations; } // internal only
 
-  const collectedAt = new Date().toISOString();
   return {
+    unresolvedEdges,
+    coverage: outputs.flatMap(out => out.coverage ?? []),
     cleanup: evaluateCleanup(outputs.flatMap((o) => o.cleanup ? [o.cleanup] : []), all, reports, meta, collectedAt),
     account: meta.account,
     region: meta.region,
@@ -171,7 +180,7 @@ function resolveRefs(nodes: Map<string, ResourceNode>, meta: { account: string; 
       target = nodes.get(id) ?? { id, nativeId: ref, name: ref, type: 'configuration-target', category: 'network', region: 'unknown', status: 'unknown', statusLabel: '구성에서 확인 · 자원 상세 미수집', props: { 식별자: ref, '확인 범위': '원본 설정의 연결 대상 · 실제 자원 상세/통신 성공은 미확인' } };
       nodes.set(id, target);
     }
-    out.push(edge(rel.kind, n.id, target.id, { label: rel.label }));
+    out.push(edge(rel.kind, n.id, target.id, { label: rel.label, props: rel.props, evidence: rel.evidence, configurationId: rel.configurationId }));
   }
   return out;
 }

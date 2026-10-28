@@ -75,7 +75,7 @@ export function summariseRecords(records: ResourceRecordSet[], region: string): 
 
 async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup: CleanupDiscovery) {
   const cf = ctx.clients.get(CloudFrontClient);
-  const items = await observeCleanup(cleanup, 'disabled-cloudfront', 'ListDistributions', () => collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items));
+  const items = await attempt(ctx, 'cloudfront distributions', () => observeCleanup(cleanup, 'disabled-cloudfront', 'ListDistributions', () => collect(paginateListDistributions({ client: cf }, {}), (p) => p.DistributionList?.Items))) ?? [];
   const tagsByArn = new Map<string, Record<string, string> | undefined>();
   await Promise.all(
     items.map(async (d) => {
@@ -92,11 +92,11 @@ async function cloudfront(ctx: CollectorContext, nodes: ResourceNode[], cleanup:
     const defaultOrigin = origins.find((o) => o.Id === d.DefaultCacheBehavior?.TargetOriginId)?.DomainName ?? origins[0]?.DomainName ?? null;
     const relations: NonNullable<ResourceNode['relations']> = [];
     const behaviors = [ { ...d.DefaultCacheBehavior, PathPattern: '(기본 경로)' }, ...(d.CacheBehaviors?.Items ?? []) ];
-    for (const behavior of behaviors) {
+    for (const [priority, behavior] of behaviors.entries()) {
       const ids = d.OriginGroups?.Items?.find(g => g.Id === behavior.TargetOriginId)?.Members?.Items?.map(m => m.OriginId) ?? [behavior.TargetOriginId];
       for (const [index, originId] of ids.entries()) {
         const origin = origins.find(o => o.Id === originId);
-        if (origin?.DomainName) relations.push({ ref: origin.DomainName, kind: 'origin', label: `${behavior.PathPattern} · ${behavior.ViewerProtocolPolicy ?? '?'} · ${behavior.AllowedMethods?.Items?.join(',') ?? '?'} · origin=${originId}${origin.OriginPath ?? ''}${ids.length > 1 ? ` · failover 순서 ${index + 1}` : ''}` });
+        if (origin?.DomainName) relations.push({ ref: origin.DomainName, kind: 'origin', configurationId: `behavior|${d.Id}|${behavior.PathPattern}|${originId}`, evidence:[{partition:'cloudfront distributions',collector:'edge',operation:'ListDistributions',owner:d.ARN,method:'configuration'}], props:{pathPattern:behavior.PathPattern ?? null,priority:priority === 0 ? behaviors.length : priority,originId:originId ?? null,originPath:origin.OriginPath ?? '',failoverOrder:index+1,failoverCriteria:JSON.stringify(d.OriginGroups?.Items?.find(g=>g.Id===behavior.TargetOriginId)?.FailoverCriteria ?? null),viewerProtocol:behavior.ViewerProtocolPolicy ?? null}, label: `${behavior.PathPattern} · ${behavior.ViewerProtocolPolicy ?? '?'} · ${behavior.AllowedMethods?.Items?.join(',') ?? '?'} · origin=${originId}${origin.OriginPath ?? ''}${ids.length > 1 ? ` · failover 순서 ${index + 1}` : ''}` });
       }
     }
     const deployed = d.Status === 'Deployed';

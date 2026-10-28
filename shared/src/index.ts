@@ -140,7 +140,7 @@ export interface ResourceNode {
    */
   refs?: string[];
   /** Typed relationship from a specific AWS configuration field. */
-  relations?: Array<{ ref: string; kind: EdgeKind; label: string }>;
+  relations?: Array<{ ref: string; kind: EdgeKind; label: string; configurationId?: string; evidence?: RelationEvidence[]; props?: ResourceEdge['props'] }>;
 }
 
 export interface AlarmInfo {
@@ -167,7 +167,45 @@ export type EdgeKind =
   | 'encrypts' // KMS key → resource
   | 'member'; // ASG → instance, cluster → service
 
+export interface RelationCoverage {
+  key: string;
+  collector: string;
+  operation: string;
+  owner?: string;
+  state: 'complete' | 'partial' | 'failed' | 'not-requested';
+  attemptedAt: string;
+  succeededAt?: string;
+  errorCode?: string;
+}
+export interface RelationEvidence {
+  partition: string;
+  collector: string;
+  operation: string;
+  owner?: string;
+  method: 'configuration' | 'identifier' | 'unknown';
+  confirmedAt?: string;
+}
+export interface RelationObservation {
+  state: 'current' | 'unverified' | 'absent' | 'legacy';
+  firstSeenAt?: string;
+  lastConfirmedAt?: string;
+  lastAttemptAt?: string;
+}
+export interface RelationChange {
+  id: string;
+  relationId: string;
+  source: string;
+  target: string;
+  kind: 'added' | 'removed' | 'changed';
+  from?: string;
+  to: string;
+  label?: string;
+}
 export interface ResourceEdge {
+  evidence?: RelationEvidence[];
+  observation?: RelationObservation;
+  /** Stable original configuration owner; labels/status never determine this ID. */
+  configurationId?: string;
   id: string;
   source: string;
   target: string;
@@ -223,6 +261,15 @@ export interface CleanupSnapshot {
 }
 
 export interface ResourceGraph {
+  unresolvedEdges?: ResourceEdge[];
+  collectionBudget?: {calls:number;maxCalls:number;timeoutMs:number;exhausted:boolean};
+  historyPersistenceError?: string;
+  revision?: string;
+  coverage?: RelationCoverage[];
+  relationshipHistory?: ResourceEdge[];
+  relationshipChanges?: RelationChange[];
+  /** Nodes retained only to explain historical relations. */
+  historicalNodes?: ResourceNode[];
   cleanup?: CleanupSnapshot;
   account: string;
   region: string;
@@ -305,7 +352,9 @@ export const STATUS_LABEL: Record<Status, string> = {
 /** Monitoring settings and results are isolated from topology collection. */
 export interface MonitoringScope { source: string; account: string; region: string }
 export type MonitoringResourceType = 'lambda' | 'sqs-queue' | 'load-balancer' | 'ecs-service' | 'ec2-instance' | 'rds-instance';
+export interface MonitoringMetricContext { id: string; label: string; loadBalancerArn: string; region: string }
 export interface MonitoringResource {
+  metricContexts?: MonitoringMetricContext[];
   metricsSupported?: boolean;
   alarmMappingSupported?: boolean;
   alarmScopeWarning?: string;
@@ -368,6 +417,7 @@ export interface AlarmHistorySnapshot {
 export const MAX_OBSERVED_RESOURCES = 8;
 
 export interface MonitoringMetricRequest {
+  contexts?: Record<string, string>;
   resourceKeys: string[];
   range: { startTime: string; endTime: string };
   metricIds?: string[];
@@ -375,7 +425,7 @@ export interface MonitoringMetricRequest {
   period?: number;
   refresh?: boolean;
 }
-export interface MonitoringMetricSeries extends MetricSeries { id: string }
+export interface MonitoringMetricSeries extends MetricSeries { id: string; contextId?: string; namespace?: string }
 export interface MonitoringMetricsSnapshot {
   scope: MonitoringScope;
   /** Requested display window; each series carries its effective aligned AWS query window. */
@@ -391,7 +441,7 @@ export interface MonitoringMetricsSnapshot {
 export interface SavedResourceGroup { id: string; name: string; tagFilters: Array<{ key: string; value?: string }>; resourceKeys: string[] }
 
 export type MonitoringRelatedReason =
-  | { kind: 'edge'; direction: 'outgoing' | 'incoming'; edgeKind: EdgeKind; label?: string; evidence: 'unknown' }
+  | { kind: 'edge'; direction: 'outgoing' | 'incoming'; edgeKind: EdgeKind; label?: string; evidence: 'unknown' | 'configuration' | 'identifier'; observation?: RelationObservation; sources?: RelationEvidence[]; relationId?: string }
   | { kind: 'tag'; key: string; value: string };
 export interface MonitoringRelatedCandidate { resource: MonitoringResource; reasons: MonitoringRelatedReason[] }
 export interface MonitoringGraphState {
@@ -399,7 +449,22 @@ export interface MonitoringGraphState {
   stale?: boolean;
   observation?: ObservationState;
 }
+export interface MonitoringPath {
+  offset?: number;
+  nodes: MonitoringResource[];
+  edges: ResourceEdge[];
+  revision: string;
+  depth: number;
+  truncated: boolean;
+  nextOffset?: number;
+}
 export interface MonitoringRelatedSnapshot {
+  collectionBudget?: ResourceGraph['collectionBudget'];
+  historyPersistenceError?: string;
+  coverage?: RelationCoverage[];
+  historical?: MonitoringRelatedCandidate[];
+  path?: MonitoringPath;
+  changes?: RelationChange[];
   error?: string;
   scope: MonitoringScope;
   resourceKey: string;
