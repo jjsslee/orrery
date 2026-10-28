@@ -63,7 +63,7 @@ function open(url: string): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     // Electron's defaults already keep the page sandboxed without Node; spellcheck would fetch dictionaries from Google.
-    webPreferences: { spellcheck: false },
+    webPreferences: { spellcheck: false, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
   });
   window.once('ready-to-show', () => window.show());
 
@@ -79,6 +79,7 @@ function open(url: string): BrowserWindow {
     openOutside(event.url);
   });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionCheckHandler(() => false);
 
   void window.loadURL(url);
   return window;

@@ -1,3 +1,4 @@
+import './styles/topology-guide.css';
 import './styles/cleanup.css';
 import { useEffect } from 'react';
 import { LIVE_GRAPH_MS, LIVE_STATUS_MS } from './model/live';

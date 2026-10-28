@@ -2,6 +2,12 @@
 
 로컬 AWS 프로필의 자격증명으로 한 계정·리전의 자원과 자원 사이의 관계를 수집해, 포함 관계(VPC → 서브넷 → 인스턴스)와 연결 관계(로드 밸런서 → 타깃, 이벤트 → Lambda, CloudFront → 오리진 …)를 한 장의 토폴로지로 보여주는 읽기 전용 뷰어입니다. CloudWatch 지표를 읽어 관계선 위에 트래픽 펄스를 흘리고, 상태·경보를 노드에 표시합니다.
 
+## 도식 가이드
+
+개별 자원 노드는 종류를 굵은 제목으로, 자원 이름을 작은 보조 텍스트로 표시합니다. 긴 이름은 말줄임하며 전체 이름과 주요 속성은 마우스를 올리거나 상세 패널에서 확인합니다.
+
+상단 **도식 가이드** 버튼으로 선 종류, 자원 카테고리 색상, 상태 점·경보, 트래픽 효과와 숨김 표시의 의미를 확인합니다. 팝업은 닫기 버튼·Esc·바깥 영역 클릭으로 닫습니다. 아이콘은 Lucide, 색상은 Orrery 자체 팔레트이며 AWS 공식 아키텍처 아이콘 세트가 아닙니다. 빨간 점선은 보안 그룹 인바운드 허용 관계이며 실제 통신이나 장애의 증거가 아닙니다.
+
 ## 실행
 
 ```bash
@@ -9,11 +15,11 @@ npm install
 npm run dev
 ```
 
-- 웹: http://localhost:5173 (Vite, `/api`는 `ORRERY_PORT`(기본 4820)로 프록시. 설치한 Orrery가 4820을 쓰고 있으면 `ORRERY_PORT=4821 npm run dev`로 나란히 띄웁니다)
+- 웹: 시작 후 터미널에 표시되는 `.orrery-cache/private/open-<API포트>.html`을 브라우저로 열고 **개발 화면 열기**를 누릅니다(macOS 기본 포트: `open .orrery-cache/private/open-4820.html`). 주소만 직접 입력하면 API 인증이 거부됩니다. Vite는 http://localhost:5173 에서 `/api`를 `ORRERY_PORT`(기본 4820)로 프록시합니다. 설치한 Orrery가 4820을 쓰고 있으면 `ORRERY_PORT=4821 npm run dev`로 나란히 띄웁니다. 웹 포트 5173이 사용 중이면 자동으로 다른 포트를 택하지 않고 종료합니다.
 - API 서버: http://127.0.0.1:4820 (Fastify, 로컬 전용 바인딩)
 - 기본 프로필은 `ORRERY_DEFAULT_PROFILE`(없으면 `AWS_PROFILE`, 그다음 `default`)이고, 리전은 프로필의 `region` 설정값입니다. 프로필에 리전이 없고 저장된 선택도 없으면 리전을 고를 때까지 수집하지 않고, 계정에서 켜진 리전 목록(`DescribeRegions`)을 보여줍니다. 상단바에서 프로필·리전을 바꿀 수 있고 선택은 브라우저에 저장됩니다.
 
-프로덕션 빌드는 `npm run build`(웹 번들) 후 `npm start`로 4820 포트에서 웹과 API를 함께 서빙합니다. 서버는 빌드 단계 없이 `tsx`로 TypeScript를 바로 실행합니다.
+프로덕션 빌드는 `npm run build`(웹 번들) 후 `npm start`로 4820 포트에서 웹과 API를 함께 서빙합니다. 같은 로컬 접속 안내 파일에서 **빌드된 화면 열기**를 누릅니다. 서버를 다시 시작하면 토큰도 바뀌므로 안내 파일을 다시 여세요. 파일에는 접속 토큰이 들어 있으므로 공유하거나 버전 관리에 넣지 않습니다. 서버는 빌드 단계 없이 `tsx`로 TypeScript를 바로 실행합니다.
 
 환경 변수는 셸에서 주거나 저장소 루트의 `.env`(gitignored, `.env.example` 참고)에 적습니다. 처음 열 때 `default` 프로필의 키가 만료되어 있으면 "액세스 키가 유효하지 않습니다"가 뜨므로, 쓰려는 프로필을 `ORRERY_DEFAULT_PROFILE`로 지정해 두는 것을 권합니다.
 
@@ -68,11 +74,19 @@ npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 
 
 ## 읽기 전용 보장
 
-서버가 만드는 모든 AWS SDK 클라이언트에는 `server/src/aws/readonly-guard.ts`의 미들웨어가 붙습니다. 명령 이름이 `Describe*`, `List*`, `Get*`, `Head*`, `Lookup*`, `BatchGet*`이 아니면 요청을 서명하거나 보내기 전에 예외를 던집니다. `npm test`의 단위 테스트가 `TerminateInstances` 같은 호출이 차단되는지 확인합니다. 그래도 사용하는 자격증명에는 `ReadOnlyAccess` 정책 수준의 권한만 주는 것을 권장합니다.
+자원 조회용 AWS SDK 클라이언트에는 `server/src/aws/readonly-guard.ts`의 미들웨어가 붙습니다. `readonly-policy.ts`에 명시된 **서비스와 명령의 조합**만 서명·전송 전에 허용합니다. 현재 수집기·모니터링·계정 확인에 필요한 명령을 포함하며, `GetSecretValue`, `GetSessionToken`, `GetObject` 등 사용하지 않는 조회 명령도 차단합니다. `npm test`는 실제 SDK middleware 문맥에서 기존 명령과 paginator의 허용 여부를 대조합니다. 명령 추가 시 정책과 테스트를 함께 검토해야 합니다.
+
+자격증명 획득용 SDK provider(SSO·AssumeRole 등)와 AWS CLI SSO 로그인은 이 자원 조회 가드와 별도입니다. 이 가드는 IAM 권한을 바꾸거나 임의 코드 실행을 막는 샌드박스가 아닙니다. 전용 프로필/역할에 실제 필요한 조회 권한만 부여하세요. 이번 보완으로 실계정의 IAM 정책은 변경하지 않았습니다.
 
 ## 로컬 전용 요청
 
 서버는 `127.0.0.1`에만 바인딩해 다른 PC의 접속을 막습니다. 같은 브라우저에 열린 다른 사이트도 루프백에 요청할 수 있으므로 `server/src/http/local-only.ts`가 두 가지를 더 거릅니다. Host 헤더가 `127.0.0.1`·`localhost`·`[::1]`이 아니면 DNS 리바인딩으로 보고 거부합니다. `/api/` 요청의 `Sec-Fetch-Site`가 `same-origin`·`none`이 아니면(다른 사이트의 fetch·이미지·폼·링크) 수집을 시작하지 못하게 거부합니다. 화면 자체는 다른 사이트의 링크로도 열 수 있습니다. CORS 헤더는 보내지 않으므로 다른 출처는 응답을 읽을 수 없습니다. 웹은 같은 출처(프로덕션) 또는 Vite 프록시(개발)로만 API를 부릅니다.
+
+`/api/health`를 제외한 모든 API(SSO·진행 스트리밍·앱 종료 포함)는 실행마다 생성하는 256비트 토큰을 `Authorization` 헤더로 요구합니다. 외부 Origin도 거부합니다. 데스크톱은 부모 프로세스에 전달한 시작 주소의 fragment로 토큰을 전달하고, 브라우저는 본인만 읽을 수 있는 로컬 안내 파일로 접속합니다. 화면은 fragment를 즉시 지우고 토큰을 탭의 sessionStorage에 보관합니다. API 쿼리·쿠키·서버 로그에는 토큰을 넣지 않으며 HTTP로 토큰을 발급하는 공개 endpoint도 없습니다. 스트리밍은 인증 헤더가 가능한 fetch 기반 SSE입니다. 다른 OS 사용자와 무인증 로컬 클라이언트를 차단하지만, 같은 OS 사용자 권한을 이미 가진 악성 프로그램이나 관리자까지 방어하지는 않습니다.
+
+캐시·토큰 폴더는 macOS/Linux에서 `0700`, 파일은 `0600`으로 보호하며 기존 캐시도 시작 시 보정합니다. Windows는 PowerShell로 현재 사용자만 허용하는 보호된 DACL을 적용하며, 적용 실패 시 서버 시작을 중단합니다. 파일은 임시 파일 생성 후 교체하고 캐시 읽기는 심볼릭 링크를 거부합니다. 캐시는 평문이며 TTL 만료가 디스크 삭제를 뜻하지 않습니다.
+
+화면에는 CSP·프레임 삽입 차단·Referrer 차단·MIME sniffing 차단 헤더를 적용합니다. 지도 배치 Worker와 로컬 리소스만 허용하고, React Flow의 위치 계산에 필요한 inline style은 유지합니다. 개발 모드는 Vite HMR용 WebSocket과 nonce가 있는 스크립트를 추가 허용합니다. Vite는 인증 파일·캐시를 `/@fs/`로도 제공하지 않습니다. Pretendard v1.3.9와 JetBrains Mono v2.304는 `web/public/fonts/`에 OFL 라이선스와 함께 포함하여 외부 CSS/폰트 요청을 없앴습니다.
 
 ## 구조
 
@@ -188,10 +202,14 @@ WAF 글로벌 조회는 `us-east-1`을 사용합니다. 다른 파티션의 글�
 
 ## 검증
 
+2026-10-27 보안 보완(미배포): 서버 109개 + 웹 74개, typecheck/build, Electron main/server CJS 번들, 로컬 API 인증·Vite 파일 차단·브라우저 모의 API 회귀를 확인했습니다. [상세 검증과 미검증 범위](docs/security-hardening.md)를 참고하세요.
+
 ```bash
 npm run typecheck   # shared / server / web
 npm test            # server + web: 읽기 전용 가드, 로컬 요청, 경보/지표 오류, 캐시, 요청 경합, 차트 회귀
 ```
+
+2026-10-28 v0.8.0 검증: 로컬 API·캐시·AWS 허용 목록 보안 보완과 도식 가이드·종류 중심 노드를 포함합니다. 서버 109개 + 웹 74개(총 183개), 전체 typecheck/build, 팝업·노드 브라우저 표시와 diff 검사를 통과했습니다. macOS ARM/Intel·Windows x64 패키지 버전·번들 일치, ZIP 무결성, Mac ad-hoc 서명과 Windows PE 형식을 확인했습니다. 이번 릴리즈에서 실제 AWS·회사 SSO·설치 앱 실기동·Windows DACL은 미검증이며 Apple 공증·Windows 코드 서명은 적용하지 않았습니다.
 
 2026-10-27 v0.7.0 검증: 서버 102개 + 웹 69개(총 171개), 전체 typecheck/build와 diff 검사 통과. SSO 로그인 안내·완료 후 재연결은 브라우저 모의 API로 확인했습니다. 추가 자원 43개와 주요 연결을 gs-parnas-dev에서 읽기 전용으로 검증했습니다. 세 플랫폼 ZIP 무결성·버전, macOS ad-hoc 서명, Windows PE 형식과 SSO 서버 번들 포함을 확인했습니다. 실제 회사 SSO 인증 완료, Windows/Intel Mac 앱 실행과 Apple 공증은 미검증입니다.
 

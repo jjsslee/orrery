@@ -15,7 +15,7 @@ export interface TypeMeta {
   plate?: boolean;
   /** Not drawn on the topology unless its overlay is switched on */
   overlay?: 'security' | 'iam' | 'encryption' | 'targetGroups';
-  /** The prop shown under the name on the canvas */
+  /** The key property shown in the canvas hover card */
   keyProp?: string;
 }
 

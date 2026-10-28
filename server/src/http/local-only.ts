@@ -12,12 +12,18 @@
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 /** Returns why the request is refused, or undefined when it may proceed. */
-export function rejectNonLocal(url: string, headers: { host?: string; 'sec-fetch-site'?: string | string[] }): string | undefined {
+export function rejectNonLocal(url: string, headers: { host?: string; origin?: string; 'sec-fetch-site'?: string | string[] }): string | undefined {
   const host = (headers.host ?? '').toLowerCase().replace(/:\d+$/, '');
   if (!LOOPBACK_HOSTS.has(host)) return `로컬 주소로만 접속할 수 있습니다 (Host: ${headers.host ?? '없음'})`;
   if (!url.startsWith('/api/')) return undefined;
   // Absent for non-browser clients (curl); 'none' is a URL typed into the address bar.
   const site = headers['sec-fetch-site'];
   if (site !== undefined && site !== 'same-origin' && site !== 'none') return `다른 사이트에서 보낸 요청은 받지 않습니다 (${site})`;
+  if (headers.origin) {
+    try {
+      const origin = new URL(headers.origin);
+      if (origin.protocol !== 'http:' || !LOOPBACK_HOSTS.has(origin.hostname)) return '로컬 화면에서 보낸 요청만 허용합니다.';
+    } catch { return '올바르지 않은 Origin입니다.'; }
+  }
   return undefined;
 }

@@ -1,3 +1,4 @@
+import { TopologyGuide } from '../components/TopologyGuide';
 import { SsoLogin } from './SsoLogin';
 import { Activity, Eye, Moon, Radio, RotateCw, Sun } from 'lucide-react';
 import { useStore } from '../model/store';
@@ -42,6 +43,7 @@ export function TopBar() {
       <div className="topbar-spacer" />
 
       <div className="topbar-right">
+        <TopologyGuide />
         <div className="conn" role="group" aria-label="AWS 연결">
           <Dropdown
             label="AWS 프로필"

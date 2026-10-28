@@ -1,12 +1,12 @@
 /**
  * Read-only guard.
  * Every SDK client created by Orrery gets this middleware. It rejects any
- * command whose name is not a Describe/List/Get/Head/Lookup call *before* a
+ * command not explicitly approved for its SDK service *before* a
  * request is signed or sent, so a bug (or a future contributor) cannot turn
  * the tool into something that mutates the account.
  */
 
-const READ_ONLY_PATTERN = /^(Describe|List|Get|Head|Lookup|BatchGet)[A-Z]/;
+import { READ_ONLY_COMMANDS } from './readonly-policy.ts';
 
 export class ReadOnlyViolationError extends Error {
   constructor(public readonly commandName: string) {
@@ -15,8 +15,10 @@ export class ReadOnlyViolationError extends Error {
   }
 }
 
-export function isReadOnlyCommand(commandName: string): boolean {
-  return READ_ONLY_PATTERN.test(commandName);
+export function isReadOnlyCommand(commandName: string, clientName?: string): boolean {
+  return clientName === undefined
+    ? Object.values(READ_ONLY_COMMANDS).some((commands) => commands.has(commandName))
+    : Object.hasOwn(READ_ONLY_COMMANDS, clientName) && READ_ONLY_COMMANDS[clientName].has(commandName);
 }
 
 export interface GuardableClient {
@@ -26,9 +28,9 @@ export interface GuardableClient {
 
 export function attachReadOnlyGuard<T extends GuardableClient>(client: T): T {
   client.middlewareStack.add(
-    (next: (args: unknown) => Promise<unknown>, context: { commandName?: string }) => async (args: unknown) => {
+    (next: (args: unknown) => Promise<unknown>, context: { commandName?: string; clientName?: string }) => async (args: unknown) => {
       const name = context.commandName ?? 'UnknownCommand';
-      if (!isReadOnlyCommand(name)) throw new ReadOnlyViolationError(name);
+      if (!context.clientName || !isReadOnlyCommand(name, context.clientName)) throw new ReadOnlyViolationError(name);
       return next(args);
     },
     { step: 'initialize', name: 'orreryReadOnlyGuard', priority: 'high', tags: ['ORRERY_READ_ONLY'] },

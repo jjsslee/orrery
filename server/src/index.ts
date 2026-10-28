@@ -2,7 +2,8 @@ import { registerSsoLoginRoutes } from './aws/sso-login.ts';
 import { registerCleanupRoutes } from './cleanup/routes.ts';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +20,8 @@ import { registerMonitoringRoutes } from './monitoring/routes.ts';
 import { assembleGraph } from './graph/assemble.ts';
 import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
-import { rejectNonLocal } from './http/local-only.ts';
+import { createApiToken, registerLocalSecurity, SECURITY_HEADERS } from './http/security.ts';
+import { privateDirectory, readPrivateFile, writePrivateFile } from './private-files.ts';
 import { BUILD, orreryAt, packaged, portFree, replaceOrrery, showWindow, userDataDir, webFiles } from './runtime.ts';
 import { readFileSync } from 'node:fs';
 
@@ -54,6 +56,7 @@ function describeCredentialError(err: unknown, source: string): string {
   return `프로필 '${profile}'로 AWS에 연결하지 못했습니다: ${message}`;
 }
 
+async function main(): Promise<void> {
 const here = dirname(fileURLToPath(import.meta.url));
 // The packaged app is configured by environment variables only; there is no repo next to it.
 if (!packaged) loadDotEnv(join(here, '..', '..', '.env'));
@@ -63,17 +66,12 @@ const GRAPH_TTL = Number(process.env.ORRERY_GRAPH_TTL_MS ?? 10 * 60_000);
 const METRICS_TTL = Number(process.env.ORRERY_METRICS_TTL_MS ?? 60_000);
 
 // The desktop app has no console to read: warnings and errors go to orrery.log in the data folder.
-if (packaged) mkdirSync(userDataDir(), { recursive: true });
+if (packaged) await privateDirectory(userDataDir());
 const app = Fastify({
-  logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info'), ...(packaged ? { file: join(userDataDir(), 'orrery.log') } : {}) },
+  logger: { level: process.env.LOG_LEVEL ?? (packaged ? 'warn' : 'info'), redact: ['req.headers.authorization'], ...(packaged ? { file: join(userDataDir(), 'orrery.log') } : {}) },
 });
-app.addHook('onRequest', async (req, reply) => {
-  const reason = rejectNonLocal(req.url, req.headers);
-  if (reason) {
-    req.log.warn({ host: req.headers.host, site: req.headers['sec-fetch-site'] }, reason);
-    return reply.status(403).send({ error: reason });
-  }
-});
+const apiToken = createApiToken();
+registerLocalSecurity(app, apiToken);
 registerSsoLoginRoutes(app);
 const cache = new Cache(packaged ? join(userDataDir(), 'cache') : join(here, '..', '..', '.orrery-cache'));
 
@@ -186,8 +184,9 @@ app.get<{ Querystring: Record<string, string> }>('/api/graph/stream', async (req
   reply.hijack();
   const raw = reply.raw;
   raw.writeHead(200, {
+    ...SECURITY_HEADERS,
     'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
+    'Cache-Control': 'no-store, no-transform',
     Connection: 'keep-alive',
   });
   const send = (e: CollectEvent) => raw.write(`data: ${JSON.stringify(e)}\n\n`);
@@ -284,13 +283,34 @@ if (packaged) {
  * of the same build never gets here: the desktop app runs only once.
  */
 async function start(): Promise<void> {
+  await cache.initialize();
   let port = PORT;
   if (packaged && !(await portFree(PORT))) {
     const running = await orreryAt(PORT);
     if (!running || !(await replaceOrrery(PORT))) port = 0;
   }
+  app.addHook('onClose', async () => {
+    // A new instance may have replaced the file; never remove its credentials.
+    try {
+      if (await readPrivateFile(tokenFile) === apiToken) {
+        await rm(tokenFile, { force: true });
+        await rm(launcher, { force: true });
+      }
+    } catch { /* already removed */ }
+  });
   await app.listen({ port, host: '127.0.0.1' });
-  if (packaged) showWindow(`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`);
+  const actualPort = (app.server.address() as AddressInfo).port;
+  const url = `http://127.0.0.1:${actualPort}/#orrery-token=${apiToken}`;
+  const authDir = packaged ? join(userDataDir(), 'private') : join(here, '..', '..', '.orrery-cache', 'private');
+  const tokenFile = join(authDir, `${actualPort}.token`);
+  await writePrivateFile(tokenFile, apiToken);
+  const launcher = join(authDir, `open-${actualPort}.html`);
+  if (packaged) showWindow(url);
+  else {
+    await writePrivateFile(launcher, `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Orrery 접속</title><h1>Orrery 접속</h1><p>이 파일을 공유하지 마세요. 서버를 다시 시작하면 파일도 갱신됩니다.</p><p><a href="${url}" rel="noreferrer">빌드된 화면 열기</a></p><p><a href="http://localhost:5173/#orrery-token=${apiToken}" rel="noreferrer">개발 화면 열기 (npm run dev)</a></p>`);
+    console.info(`Orrery 접속 안내 파일을 브라우저로 여세요: ${launcher}`);
+  }
+
 }
 
 start().catch((err: unknown) => {
@@ -307,3 +327,6 @@ function shutdown(): void {
   void app.close().finally(() => process.exit(0));
 }
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, shutdown);
+
+}
+void main().catch((err: unknown) => { console.error(err instanceof Error ? err.message : String(err)); process.exit(1); });

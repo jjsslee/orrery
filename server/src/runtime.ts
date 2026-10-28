@@ -9,6 +9,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { extname, join, relative, sep } from 'node:path';
+import { readPrivateFile } from './private-files.ts';
 
 /** Electron hands a utility process this port to talk back to the main process. */
 const parentPort = (process as NodeJS.Process & { parentPort?: { postMessage(message: unknown): void } }).parentPort;
@@ -78,7 +79,9 @@ export async function orreryAt(port: number): Promise<string | undefined> {
 /** Asks a packaged Orrery on this port to quit; true once the port is free. A repo server has no quit and stays. */
 export async function replaceOrrery(port: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(1500) });
+    let token: string | undefined;
+    try { token = await readPrivateFile(join(userDataDir(), 'private', `${port}.token`)); } catch { /* Legacy builds did not use a token. */ }
+    const res = await fetch(`http://127.0.0.1:${port}/api/quit`, { method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(1500) });
     if (!res.ok) return false;
   } catch {
     return false;

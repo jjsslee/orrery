@@ -1,0 +1,22 @@
+.topology-guide { width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 0 24px 90px #0006; }
+.topology-guide::backdrop { background: #050b18a8; }
+.guide-content { padding: 28px; }
+.guide-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.guide-header h2 { margin: 0; font-size: 22px; }
+.topology-guide p, .topology-guide li, .topology-guide dd { color: var(--ink-2); font-size: 13px; line-height: 1.7; }
+.topology-guide p { margin: 8px 0 0; }
+.topology-guide section { margin-top: 24px; }
+.topology-guide h3 { margin: 0 0 12px; font-size: 15px; }
+.guide-lines { margin: 0; }
+.guide-lines > div { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.guide-lines dt { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.guide-lines dd { margin: 0; }
+.guide-lines svg { width: 48px; flex-shrink: 0; overflow: visible; }
+.guide-lines .fedge { stroke-width: 2; }
+.guide-categories, .guide-statuses { display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 13px; }
+.guide-categories > span { display: inline-flex; align-items: center; gap: 6px; }
+.guide-categories i { width: 10px; height: 10px; background: var(--cat); border-radius: 3px; }
+.topology-guide ul { padding-left: 20px; }
+.topology-guide li + li { margin-top: 6px; }
+.topology-guide footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
+@media (max-width: 600px) { .guide-content { padding: 20px; } .guide-lines > div { grid-template-columns: 1fr; gap: 6px; } }

@@ -10,6 +10,25 @@ const graph = (account: string): ResourceGraph => ({ account, source: 'test', re
 const metrics = (label: string): MetricsBundle => ({ region: label, collectedAt: '', series: {}, traffic: {} });
 function reset() { useStore.setState({ profile: 'A', region: 'r', graph: graph('new'), metrics: undefined, metricsLoading: false, liveBusy: false, loading: { active: false, reports: {}, order: [] } }); }
 
+test('bootstrap authentication failure is visible and clears old account data without rejecting', async () => {
+  reset();
+  const original = { ...api };
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { documentElement: { dataset: {} } } });
+  api.profiles = async () => { throw Object.assign(new Error('접속 인증이 필요합니다.'), { status: 401 }); };
+  api.collectors = async () => ({});
+  try {
+    await useStore.getState().bootstrap();
+    assert.match(useStore.getState().loading.error ?? '', /접속 인증/);
+    assert.equal(useStore.getState().graph, undefined);
+    assert.equal(useStore.getState().identity, undefined);
+  } finally {
+    Object.assign(api, original);
+    if (descriptor) Object.defineProperty(globalThis, 'document', descriptor);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+});
+
 test('same-scope metrics: stale success and finally cannot overwrite newer request', async () => {
   reset(); const old = api.metrics; const first = deferred<MetricsBundle>(), next = deferred<MetricsBundle>(); let n = 0;
   api.metrics = () => (++n === 1 ? first.promise : next.promise);

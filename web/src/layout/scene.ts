@@ -66,7 +66,7 @@ export interface SceneInput {
   traffic?: Record<string, number>;
 }
 
-// Room for a name on two lines (see components/fitName.ts).
+// Room for the resource type heading (up to two lines) and its secondary name.
 export const NODE_W = 228;
 export const NODE_H = 66;
 export const AGG_H = 50;

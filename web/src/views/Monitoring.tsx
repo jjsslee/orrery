@@ -23,7 +23,7 @@ export function Monitoring() {
     m.activate(profile, region); return () => m.deactivate();
   }, [profile, region, setup, connectionGeneration, connectionBusy, connectionError]);
   if (setup === 'needed') return <SetupGuide />;
-  if (!region) return <RegionPrompt />;
+  if (!region) return connectionError ? <p className="monitor-notice" role="alert">{connectionError}</p> : <RegionPrompt />;
   const scope = m.alarms?.scope ?? m.resources?.scope;
   const scopeKey = scope ? JSON.stringify([scope.source, scope.account, scope.region]) : `${profile}:${region}:unverified`;
   const unmapped = m.alarms?.alarms.filter((alarm) => alarm.mapping === 'unresolved') ?? [];

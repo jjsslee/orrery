@@ -179,22 +179,26 @@ export const useStore = create<AppState>((set, get) => ({
   async bootstrap() {
     const request = beginRequest('bootstrap');
     document.documentElement.dataset.theme = get().theme;
-    const [{ profiles, defaultProfile }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
-    if (!request.current()) return;
-    // Nothing configured on this PC yet: guide the setup rather than try a profile that does not exist.
-    if (!profiles.length) {
-      set({ profiles, defaultProfile, collectorLabels, setup: 'needed' });
-      return;
+    try {
+      const [{ profiles, defaultProfile }, collectorLabels] = await Promise.all([api.profiles(), api.collectors()]);
+      if (!request.current()) return;
+      // Nothing configured on this PC yet: guide the setup rather than try a profile that does not exist.
+      if (!profiles.length) {
+        set({ profiles, defaultProfile, collectorLabels, setup: 'needed' });
+        return;
+      }
+      const wanted = get().profile;
+      const profile = profiles.find((p) => p.name === wanted)?.name ?? defaultProfile;
+      // No saved region and none in the profile: wait for the person to pick one rather than guess.
+      const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
+      // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
+      set({ profiles, defaultProfile, collectorLabels, profile, region, setup: 'done' });
+      if (get().view !== 'monitoring') void get().load(false);
+      else fetchIdentity(profile, region);
+      fetchRegions(profile, region);
+    } catch (error) {
+      if (request.current()) set({ graph: undefined, metrics: undefined, identity: undefined, profiles: [], loading: { active: false, reports: {}, order: [], error: (error as Error).message } });
     }
-    const wanted = get().profile;
-    const profile = profiles.find((p) => p.name === wanted)?.name ?? defaultProfile;
-    // No saved region and none in the profile: wait for the person to pick one rather than guess.
-    const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
-    // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
-    set({ profiles, defaultProfile, collectorLabels, profile, region, setup: 'done' });
-    if (get().view !== 'monitoring') void get().load(false);
-    else fetchIdentity(profile, region);
-    fetchRegions(profile, region);
   },
 
   async reconnect() {
