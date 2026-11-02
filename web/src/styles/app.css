@@ -211,6 +211,7 @@
 .fedge.st-warning { stroke: var(--status-warning); }
 .fedge.hl { stroke: var(--ink); stroke-width: 1.9; opacity: 1; }
 .fedge.live.st-critical, .fedge.live.st-warning { stroke-width: 1.6; }
+.fedge.muted, .fedge.muted.ghost { opacity: 0.18; }
 .fedge.dim { opacity: 0.1; }
 .fedge.idle { stroke-dasharray: 7 9; animation: drift 2.4s linear infinite; }
 @keyframes drift { to { stroke-dashoffset: -32; } }

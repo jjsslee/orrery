@@ -3,7 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps, type Edge }
 import type { SceneEdge } from '../../layout/scene';
 import { EDGE_KIND_LABEL } from '../../model/types';
 
-export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { highlight: boolean; labeled: boolean; showTraffic: boolean; hasMetrics: boolean };
+export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { highlight: boolean; muted: boolean; labeled: boolean; showTraffic: boolean; hasMetrics: boolean };
 export type FlowEdgeType = Edge<FlowEdgeData, 'flow'>;
 
 const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -11,12 +11,12 @@ const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(pref
 function FlowEdgeImpl({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }: EdgeProps<FlowEdgeType>) {
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.3 });
   if (!data) return null;
-  const { kind, live, traffic, dim, highlight, status, label, count, showTraffic } = data;
-  const animated = showTraffic && live && !reduceMotion && !dim;
+  const { kind, live, traffic, dim, highlight, muted, status, label, count, showTraffic } = data;
+  const animated = showTraffic && live && !reduceMotion && !dim && !muted;
   const particles = animated && traffic > 0 ? 1 + Math.round(traffic * 3) : 0;
   const dur = 4.2 - traffic * 2.8;
   const idle = false;
-  const cls = `fedge k-${kind} ${live ? 'live' : ''} ${dim ? 'dim' : ''} ${highlight ? 'hl' : ''} ${status ? `st-${status}` : ''} ${idle ? 'idle' : ''} ${data.ghost ? 'ghost' : ''}`;
+  const cls = `fedge k-${kind} ${live ? 'live' : ''} ${dim ? 'dim' : ''} ${highlight ? 'hl' : ''} ${muted ? 'muted' : ''} ${status ? `st-${status}` : ''} ${idle ? 'idle' : ''} ${data.ghost ? 'ghost' : ''}`;
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} className={cls} interactionWidth={14} />

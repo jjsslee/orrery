@@ -22,6 +22,9 @@ const DIRECTIONAL = new Set(['targets', 'invokes', 'publishes', 'reads', 'origin
 
 type AnyNode = ResourceNodeType | PlateNodeType | AggregateNodeType;
 
+// Explicit stacking (zIndexMode="manual"): plates < edges < cards, so lines pass behind resource cards instead of over them.
+const Z_PLATE = -10, Z_EDGE = 0, Z_CARD = 10;
+
 const CAT_HEX: Record<string, string> = { compute: '#c1821f', network: '#974fed', database: '#6ca2fd', storage: '#77c58e', security: '#c71f28', integration: '#e55caf' };
 
 function TopologyInner() {
@@ -163,26 +166,28 @@ function TopologyInner() {
       const p = placed.placements.get(n.id) ?? { x: 0, y: 0, width: n.width, height: n.height };
       const base = { id: n.id, position: { x: p.x, y: p.y }, parentId: n.parentId, extent: n.parentId ? ('parent' as const) : undefined, sourcePosition: Position.Right, targetPosition: Position.Left };
       if (n.kind === 'plate') {
-        const node: PlateNodeType = { ...base, type: 'plate', draggable: false, selectable: false, focusable: false, width: p.width, height: p.height, style: { width: p.width, height: p.height }, data: { node: n.node, lane: n.lane, dim: n.dim, depth: n.depth, count: childCount.get(n.id) ?? 0 }, zIndex: -1 };
+        const node: PlateNodeType = { ...base, type: 'plate', draggable: false, selectable: false, focusable: false, width: p.width, height: p.height, style: { width: p.width, height: p.height }, data: { node: n.node, lane: n.lane, dim: n.dim, depth: n.depth, count: childCount.get(n.id) ?? 0 }, zIndex: Z_PLATE + n.depth };
         return node;
       }
       if (n.kind === 'aggregate') {
-        const node: AggregateNodeType = { ...base, type: 'aggregate', width: n.width, height: n.height, style: { width: n.width, height: n.height }, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
+        const node: AggregateNodeType = { ...base, type: 'aggregate', width: n.width, height: n.height, style: { width: n.width, height: n.height }, zIndex: Z_CARD, data: { ...n.aggregate!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++ } };
         return node;
       }
-      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0, changed: Boolean(changed[n.id]), ghost: Boolean(n.ghost) } };
+      const node: ResourceNodeType = { ...base, type: 'resource', width: n.width, height: n.height, style: { width: n.width, height: n.height }, selected: n.id === selectedId, zIndex: n.id === selectedId ? Z_CARD + 1 : Z_CARD, data: { node: n.node!, dim: n.dim, traffic: n.traffic, depth: n.depth, index: index++, alarms: n.node!.alarms?.length ?? 0, changed: Boolean(changed[n.id]), ghost: Boolean(n.ghost) } };
       return node;
     });
     const hasMetrics = Boolean(metrics && Object.keys(metrics.traffic).length);
     const focus = selectedId ?? hoverId;
     const edges: FlowEdgeType[] = drawn.edges.map((e) => {
       const highlight = Boolean(focus && (e.source === focus || e.target === focus));
+      // While a node is in focus, its own lines stay strong and the rest fade back so they can be followed behind cards.
+      const muted = Boolean(focus) && !highlight;
       // Mid-line labels only for the selected node; hovering shows the HoverCard instead.
       const labeled = Boolean(selectedId && (e.source === selectedId || e.target === selectedId));
       const color = e.status === 'critical' ? 'var(--status-critical)' : e.status === 'warning' ? 'var(--status-warning)' : highlight ? 'var(--ink-2)' : 'var(--line-strong)';
       return {
-        id: e.id, source: e.source, target: e.target, type: 'flow', zIndex: highlight ? 2 : 1,
-        data: { ...e, highlight, labeled, showTraffic: overlays.traffic, hasMetrics },
+        id: e.id, source: e.source, target: e.target, type: 'flow', zIndex: highlight ? Z_EDGE + 1 : Z_EDGE,
+        data: { ...e, highlight, muted, labeled, showTraffic: overlays.traffic, hasMetrics },
         markerEnd: DIRECTIONAL.has(e.kind) ? { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } : undefined,
       };
     });
@@ -229,7 +234,7 @@ function TopologyInner() {
         minZoom={0.04}
         maxZoom={2.2}
         nodesConnectable={false}
-        elevateNodesOnSelect
+        zIndexMode="manual"
         onlyRenderVisibleElements
         deleteKeyCode={null}
         selectionKeyCode={null}
