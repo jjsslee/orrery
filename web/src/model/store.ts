@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MonitoringScope, Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
 import { api } from '../api/client';
+import { useMonitoring } from './monitoring';
 import { sameTagFilter, type TagFilter } from './tags';
 import { TYPE_META } from './types';
 
@@ -338,6 +339,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setView: (view) => {
     if (view === get().view) return;
+    if (view !== 'monitoring') useMonitoring.setState({ pendingResource: undefined });
     if (view === 'monitoring') {
       cancelRequests();
       set({ view, loading: { active: false, reports: {}, order: [] }, metricsLoading: false, liveBusy: false });

@@ -17,6 +17,7 @@ export function monitoringWindow(range: TimeRange, now = Date.now(), start?: str
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 }
 interface MonitoringState {
+  pendingResource?: { profile: string; region: string; account: string; type: MonitoringResourceType; nativeId: string };
   profile: string; region: string; scopeNotice?: string;
   autoRefresh: 0 | 60000 | 300000;
   pauseRequests(includeRelated?: boolean): void;
@@ -67,9 +68,13 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
   profile: '', region: '', alarmLoading: false, resourceLoading: false, historyLoading: false, range: '3h', customStart: '', customEnd: '',
   activate(profile, region) {
     cancel();
+    const pending = get().pendingResource;
+    const target = pending?.profile === profile && pending.region === region ? pending : undefined;
     const changed = get().profile !== profile || get().region !== region;
     set({ profile, region, workspaceActive: Boolean(profile && region), alarmLoading: false, resourceLoading: false, historyLoading: false, metricsLoading: false, ...(changed ? { scopeNotice: undefined, resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, groups: [], resourceCoverage: {}, selectedResources: [], metricContexts: {}, metrics: undefined, metricsError: undefined, alarms: undefined, resources: undefined, history: undefined, selectedAlarm: undefined, alarmError: undefined, resourceError: undefined, historyError: undefined } : {}) });
-    if (profile && region) { void get().loadAlarms(); void get().loadResourceTypes(MONITORING_RESOURCE_TYPES.map(([type]) => type)); if (!changed && get().referenceResource) void get().loadRelated(false); if (!changed && get().selectedAlarm && !get().history && !get().historyLoading) void get().loadHistory(); }
+    set({ pendingResource: target });
+    if (target) set({ selectedResources: [], referenceResource: undefined, related: undefined, relatedLoading: false, metrics: undefined, metricsError: undefined, metricContexts: {}, autoRefresh: 0, resourceFilters: { ...emptyResourceFilters(), query: target.nativeId } });
+    if (profile && region) { void get().loadAlarms(); void get().loadResourceTypes([...(target ? [target.type] : []), ...MONITORING_RESOURCE_TYPES.map(([type]) => type)]); if (!changed && get().referenceResource) void get().loadRelated(false); if (!changed && get().selectedAlarm && !get().history && !get().historyLoading) void get().loadHistory(); }
   },
   pauseRequests(includeRelated = true) { for (const key of (includeRelated ? ['metrics', 'alarms', 'related'] : ['metrics', 'alarms'])) controllers.get(key)?.abort(); if (includeRelated) { controllers.get('history')?.abort(); clearHistoryTimer(); } if (includeRelated && relatedTimer) clearTimeout(relatedTimer); if (includeRelated) relatedTimer = undefined; set({ metricsLoading: false, alarmLoading: false, ...(includeRelated ? { relatedLoading: false, historyLoading: false } : {}) }); },
   deactivate() { cancel(); set({ workspaceActive: false, relatedLoading: false, alarmLoading: false, resourceLoading: false, historyLoading: false, metricsLoading: false }); },
@@ -101,12 +106,22 @@ export const useMonitoring = create<MonitoringState>((set, get) => ({
         const items = new Map(previous?.resources.filter((item) => !resources.complete || item.type !== type).map((item) => [item.key, item]));
         for (const item of resources.resources) items.set(item.key, item);
         set({ ...(changedAccount ? { scopeNotice: 'AWS 계정 또는 인증 소스가 바뀌어 이전 선택을 비웠습니다. 다시 연결로 계정을 확인하세요.', resourceFilters: emptyResourceFilters(), referenceResource: undefined, related: undefined, relatedLoading: false, relatedError: undefined, restoreNotice: undefined, restoreCandidates: [], restoreMissingKeys: [], autoRefresh: 0, alarms: undefined, selectedAlarm: undefined, selectedResources: [], metricContexts: {}, metrics: undefined, history: undefined, resourceLoading: false, metricsLoading: false, alarmLoading: false, historyLoading: false, groups: readGroups(resources.scope),  } : {}), resources: { ...resources, resources: [...items.values()], types: [...new Set([...(previous?.types ?? []), ...resources.types])], complete: Object.values(coverage).every((entry) => entry.complete) }, groups: !oldScope ? readGroups(resources.scope) : (changedAccount ? readGroups(resources.scope) : get().groups), resourceCoverage: coverage, resourceError: resources.observation.error });
+        const target = get().pendingResource;
+        if (target?.type === type) {
+          set({ pendingResource: undefined });
+          const resource = resources.scope.account === target.account ? resources.resources.find(item => item.type === target.type && item.nativeId === target.nativeId) : undefined;
+          if (!resource) set({ metricsError: '선택한 자원을 현재 계정·리전에서 확인하지 못했습니다. 자원 목록을 확인한 뒤 다시 선택하세요.' });
+          else {
+            get().setReferenceResource(resource.key);
+            get().toggleResource(resource.key);
+          }
+        }
         const reference = get().referenceResource;
         if (reference && get().related) { const index = get().resources?.resources ?? []; set({ related: { ...get().related!, sameTags: mergeRelatedCandidates(get().related!.sameTags, sameTagCandidates(index.find((item) => item.key === reference), index)) } }); }
         void get().loadAlarms();
       }
     }
-    catch (e) { if (r.current()) set({ resourceError: (e as Error).message, resourceCoverage: { ...get().resourceCoverage, [type]: { attemptedAt: new Date().toISOString(), complete: false, error: (e as Error).message } }, ...(get().resources ? { resources: { ...get().resources!, complete: false } } : {}) }); }
+    catch (e) { if (r.current()) set({ ...(get().pendingResource?.type === type ? { pendingResource: undefined, metricsError: '선택한 자원의 목록을 조회하지 못했습니다. 자원 목록에서 다시 시도하세요.' } : {}), resourceError: (e as Error).message, resourceCoverage: { ...get().resourceCoverage, [type]: { attemptedAt: new Date().toISOString(), complete: false, error: (e as Error).message } }, ...(get().resources ? { resources: { ...get().resources!, complete: false } } : {}) }); }
     finally { if (r.current()) set({ resourceLoading: false }); }
   },
   async loadResourceTypes(types, refresh = false) {

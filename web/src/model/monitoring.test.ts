@@ -179,3 +179,41 @@ test('partial graph diagnostics do not become a failed related request',async()=
  assert.match(useMonitoring.getState().related?.graph.observation?.error ?? '',/AccessDenied/);
  }finally{useMonitoring.getState().deactivate();Object.assign(api,original);}
 });
+
+
+test('topology entry prioritizes the target type and selects the exact resource after discovery', async () => {
+  const original = { ...api };
+  const calls: string[] = [];
+  api.monitoringAlarms = async () => ({ scope, observation, complete: true, alarms: [] });
+  api.monitoringRelated = () => new Promise(() => {});
+  api.monitoringResources = async (_p, _r, type) => {
+    calls.push(type);
+    return { scope, observation, complete: true, types: [type], resources: type === 'ec2-instance' ? [{ key: 'target', nodeId: 'ec2:target', nativeId: 'i-fixture', name: 'fixture', type, region: scope.region, tagsStatus: 'complete', props: {} }] : [] };
+  };
+  try {
+    useMonitoring.setState({ pendingResource: { profile: 'topology-test', region: scope.region, account: scope.account, type: 'ec2-instance', nativeId: 'i-fixture' }, selectedResources: ['old'], autoRefresh: 60000 });
+    useMonitoring.getState().activate('topology-test', scope.region);
+    // React StrictMode runs effect cleanup and setup again before discovery completes.
+    useMonitoring.getState().deactivate();
+    useMonitoring.getState().activate('topology-test', scope.region);
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+    assert.equal(calls[0], 'ec2-instance');
+    assert.deepEqual(useMonitoring.getState().selectedResources, ['target']);
+    assert.equal(useMonitoring.getState().referenceResource, 'target');
+    assert.equal(useMonitoring.getState().pendingResource, undefined);
+    assert.equal(useMonitoring.getState().autoRefresh, 0);
+  } finally { useMonitoring.getState().deactivate(); Object.assign(api, original); }
+});
+
+test('topology entry reports a missing resource without selecting a substitute', async () => {
+  const original = { ...api };
+  api.monitoringAlarms = () => new Promise(() => {});
+  api.monitoringResources = async () => ({ scope, observation, complete: true, types: ['lambda'], resources: [] });
+  try {
+    useMonitoring.setState({ profile: 'test', region: scope.region, selectedResources: [], pendingResource: { profile: 'test', region: scope.region, account: scope.account, type: 'lambda', nativeId: 'missing' } });
+    await useMonitoring.getState().loadResources('lambda');
+    assert.deepEqual(useMonitoring.getState().selectedResources, []);
+    assert.match(useMonitoring.getState().metricsError ?? '', /확인하지 못했습니다/);
+    assert.equal(useMonitoring.getState().pendingResource, undefined);
+  } finally { useMonitoring.getState().deactivate(); Object.assign(api, original); }
+});

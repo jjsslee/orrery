@@ -1,7 +1,7 @@
 {
   "name": "orrery",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "AWS 자원과 관계를 한 장의 지도로 보여주는 읽기 전용 토폴로지 뷰어",
   "workspaces": [
     "shared",

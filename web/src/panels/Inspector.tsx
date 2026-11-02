@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Copy, Check, Table as TableIcon, LineChart, LocateFixed, X } from 'lucide-react';
 import type { EdgeKind, ResourceNode, ResourceEdge } from '@orrery/shared';
-import { STATUS_LABEL } from '@orrery/shared';
+import { MONITORING_RESOURCE_TYPES, STATUS_LABEL } from '@orrery/shared';
 import { useStore } from '../model/store';
+import { useMonitoring } from '../model/monitoring';
 import { EDGE_KIND_LABEL, TYPE_META } from '../model/types';
 import { TypeIcon } from '../components/TypeIcon';
 import { StatusDot } from '../components/StatusDot';
@@ -37,6 +38,13 @@ export function Inspector() {
 
   if (!node) return null;
   const meta = TYPE_META[node.type];
+  const monitoringType = MONITORING_RESOURCE_TYPES.find(([type]) => type === node.type)?.[0];
+  const openMonitoring = () => {
+    if (!monitoringType || !graph) return;
+    const { profile, region, setView } = useStore.getState();
+    useMonitoring.setState({ pendingResource: { profile, region, account: graph.account, type: monitoringType, nativeId: node.nativeId } });
+    setView('monitoring');
+  };
   const series = metrics?.series[node.id] ?? [];
   const traffic = metrics?.traffic[node.id];
   const props = Object.entries(node.props).filter(([k, v]) => !k.startsWith('_') && v !== null && v !== '');
@@ -75,6 +83,11 @@ export function Inspector() {
         </button>
 
         {copyResult?.id === node.id && <div role="status" className="muted">{copyResult.state === 'copied' ? '복사했습니다.' : '복사하지 못했습니다. 클립보드 권한을 확인하거나 다시 시도해 주세요.'}</div>}
+
+        <section className="insp-section">
+          <button type="button" className="btn" disabled={!monitoringType} onClick={openMonitoring}><LineChart size={14} /> 모니터링</button>
+          <p className="muted">{monitoringType ? '이 자원의 CloudWatch 지표를 조회합니다. 조회 비용이 발생할 수 있습니다.' : '이 자원 유형은 CloudWatch 지표를 아직 지원하지 않습니다.'}</p>
+        </section>
 
         {node.alarms && node.alarms.length > 0 && (
           <section className="insp-section insp-alarms">
