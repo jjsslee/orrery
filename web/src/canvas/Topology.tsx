@@ -7,6 +7,7 @@ import '@xyflow/react/dist/style.css';
 import { useStore } from '../model/store';
 import { sceneStructureKey, buildScene, type Scene } from '../layout/scene';
 import { layoutScene, type Placement } from '../layout/elk';
+import { assignPorts } from '../layout/ports';
 import { ResourceNode, type ResourceNodeType } from './nodes/ResourceNode';
 import { PlateNode, type PlateNodeType } from './nodes/PlateNode';
 import { AggregateNode, type AggregateNodeType } from './nodes/AggregateNode';
@@ -178,6 +179,7 @@ function TopologyInner() {
     });
     const hasMetrics = Boolean(metrics && Object.keys(metrics.traffic).length);
     const focus = selectedId ?? hoverId;
+    const ports = assignPorts(drawn, placed.placements);
     const edges: FlowEdgeType[] = drawn.edges.map((e) => {
       const highlight = Boolean(focus && (e.source === focus || e.target === focus));
       // While a node is in focus, its own lines stay strong and the rest fade back so they can be followed behind cards.
@@ -187,7 +189,7 @@ function TopologyInner() {
       const color = e.status === 'critical' ? 'var(--status-critical)' : e.status === 'warning' ? 'var(--status-warning)' : highlight ? 'var(--ink-2)' : 'var(--line-strong)';
       return {
         id: e.id, source: e.source, target: e.target, type: 'flow', zIndex: highlight ? Z_EDGE + 1 : Z_EDGE,
-        data: { ...e, highlight, muted, labeled, showTraffic: overlays.traffic, hasMetrics },
+        data: { ...e, ports: ports.get(e.id), highlight, muted, labeled, showTraffic: overlays.traffic, hasMetrics },
         markerEnd: DIRECTIONAL.has(e.kind) ? { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } : undefined,
       };
     });

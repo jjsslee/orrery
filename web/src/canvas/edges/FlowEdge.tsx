@@ -1,15 +1,40 @@
 import { memo } from 'react';
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps, type Edge } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, Position, type EdgeProps, type Edge, type InternalNode } from '@xyflow/react';
 import type { SceneEdge } from '../../layout/scene';
+import type { EdgePorts, Side } from '../../layout/ports';
 import { EDGE_KIND_LABEL } from '../../model/types';
 
-export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { highlight: boolean; muted: boolean; labeled: boolean; showTraffic: boolean; hasMetrics: boolean };
+export type FlowEdgeData = { [K in keyof SceneEdge]: SceneEdge[K] } & { ports?: EdgePorts; highlight: boolean; muted: boolean; labeled: boolean; showTraffic: boolean; hasMetrics: boolean };
 export type FlowEdgeType = Edge<FlowEdgeData, 'flow'>;
 
 const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-function FlowEdgeImpl({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }: EdgeProps<FlowEdgeType>) {
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.3 });
+const POSITION: Record<Side, Position> = { left: Position.Left, right: Position.Right };
+
+function anchor(node: InternalNode, side: Side, port: number) {
+  const { x, y } = node.internals.positionAbsolute;
+  const width = node.measured.width ?? node.width ?? 0, height = node.measured.height ?? node.height ?? 0;
+  return { x: side === 'right' ? x + width : x, y: y + height * port };
+}
+
+function FlowEdgeImpl({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }: EdgeProps<FlowEdgeType>) {
+  const sourceNode = useInternalNode(source), targetNode = useInternalNode(target);
+  const ports = data?.ports;
+  let path: string, labelX: number, labelY: number;
+  if (ports && sourceNode && targetNode) {
+    const s = anchor(sourceNode, ports.sourceSide, ports.sourcePort), t = anchor(targetNode, ports.targetSide, ports.targetPort);
+    if (ports.sourceSide === ports.targetSide) {
+      // Ends stacked in one column: bow out beside the column like a bracket rather than cut through the cards between.
+      const bow = (36 + Math.abs(t.y - s.y) * 0.15) * (ports.sourceSide === 'right' ? 1 : -1);
+      path = `M${s.x},${s.y} C${s.x + bow},${s.y} ${t.x + bow},${t.y} ${t.x},${t.y}`;
+      labelX = (s.x + t.x) / 2 + bow * 0.75;
+      labelY = (s.y + t.y) / 2;
+    } else {
+      [path, labelX, labelY] = getBezierPath({ sourceX: s.x, sourceY: s.y, targetX: t.x, targetY: t.y, sourcePosition: POSITION[ports.sourceSide], targetPosition: POSITION[ports.targetSide], curvature: 0.3 });
+    }
+  } else {
+    [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.3 });
+  }
   if (!data) return null;
   const { kind, live, traffic, dim, highlight, muted, status, label, count, showTraffic } = data;
   const animated = showTraffic && live && !reduceMotion && !dim && !muted;

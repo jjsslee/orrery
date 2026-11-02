@@ -7,6 +7,9 @@ export interface HoverAnchor { id: string; x: number; y: number; w: number; h: n
 
 const MAX_RELATIONS = 6;
 const CARD_W = 320;
+const EDGE = 14;
+// Above the canvas toolbar (bottom 14 + 40 high) and the minimap (bottom margin 20 + 120 high).
+const TOOLBAR_CLEAR = 64, MINIMAP_CLEAR = 150;
 const NON_DIRECTIONAL = new Set(['attached', 'member']);
 
 function nameOf(n: SceneNode | undefined): string {
@@ -14,8 +17,8 @@ function nameOf(n: SceneNode | undefined): string {
 }
 
 /**
- * Hovering a node: one readable card beside it (full name, type, status and
- * its relations) instead of labels scattered along the highlighted lines.
+ * Hovering a node: one readable card (full name, type, status and its
+ * relations) instead of labels scattered along the highlighted lines.
  */
 export function HoverCard({ anchor, scene, bounds }: { anchor: HoverAnchor; scene: Scene; bounds: { width: number; height: number } }) {
   const byId = new Map(scene.nodes.map((n) => [n.id, n]));
@@ -35,13 +38,13 @@ export function HoverCard({ anchor, scene, bounds }: { anchor: HoverAnchor; scen
   const keyProp = node && meta?.keyProp ? node.props[meta.keyProp] : undefined;
   const status = node?.status ?? target.aggregate?.worst;
 
-  // Beside the node, on whichever side has room; kept inside the canvas.
-  const right = anchor.x + anchor.w + 10 + CARD_W <= bounds.width;
-  const left = right ? anchor.x + anchor.w + 10 : Math.max(8, anchor.x - 10 - CARD_W);
-  const top = Math.min(Math.max(8, anchor.y), Math.max(8, bounds.height - 260));
+  // In a lower corner of the map, on the side away from the node, so the card never covers
+  // the node, its highlighted lines or its neighbours. The minimap is hidden at 1180px and below.
+  const onRight = anchor.x + anchor.w / 2 < bounds.width / 2;
+  const bottom = onRight && window.innerWidth > 1180 ? MINIMAP_CLEAR : TOOLBAR_CLEAR;
 
   return (
-    <div className="hover-card" style={{ left, top, width: CARD_W }} role="tooltip">
+    <div className="hover-card" style={{ [onRight ? 'right' : 'left']: EDGE, bottom, width: CARD_W, maxHeight: bounds.height - bottom - EDGE, overflow: 'hidden' }} role="tooltip">
       <div className="hc-name">{nameOf(target)}</div>
       <div className="hc-meta">
         {meta && <span className="hc-type" style={{ color: `var(--cat-${meta.category})` }}>{meta.label}</span>}
