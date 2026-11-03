@@ -59,7 +59,7 @@ export function MonitoringMetrics() {
     </div>}
     <p className="mw-query-note">
       자원이나 기간을 바꾸면 CloudWatch 지표를 자동으로 조회하며, 조회량에 따라 비용이 발생할 수 있습니다. 한 번에 최대 {MAX_OBSERVED}개 자원·100개 지표, SDK 명령 10회까지 조회합니다.
-      {m.autoRefresh !== 0 && ' 자동 갱신은 화면이 보일 때만 돌고, 일시 오류는 최대 20분 간격으로 늦추며 인증·권한 오류에는 멈춥니다.'}
+      {m.autoRefresh !== 0 && ' 자동 갱신은 화면이 보일 때만 돌고, 복귀 시 갱신 예정 시각이 지났으면 즉시 조회합니다. 일시 오류는 최대 20분 간격으로 늦추며 인증·권한 오류에는 멈춥니다.'}
       {m.metrics && <span className="mw-last-fetch"> 마지막 조회 {fmtDateTime(m.metrics.collectedAt)} · 지표 {m.metrics.queryCount}개 · SDK {m.metrics.requestCount}회</span>}
     </p>
     {m.metricsError && <p role="alert" className="monitor-notice">지표 조회 문제 · 이전 값이 포함될 수 있습니다: {m.metricsError}</p>}

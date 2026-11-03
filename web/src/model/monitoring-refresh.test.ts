@@ -14,3 +14,39 @@ test('temporary failures apply bounded backoff and resume only one timer after p
   const scheduler = createMonitoringRefresh({ interval: 300000, run: async () => success, ...timer });
   scheduler.start(); timer.fire(); await flush(); assert.equal([...timer.jobs.values()][0].ms, 600000); timer.fire(); await flush(); assert.equal([...timer.jobs.values()][0].ms, 1200000); scheduler.stop(); assert.equal(timer.jobs.size, 0); success = true; scheduler.start(); timer.fire(); await flush(); assert.equal(timer.jobs.size, 1); assert.equal([...timer.jobs.values()][0].ms, 300000); scheduler.stop();
 });
+
+test('returning after lunch refreshes immediately instead of waiting another full interval', async () => {
+  const timer = fakeTimer(); let now = 0, calls = 0;
+  const scheduler = createMonitoringRefresh({ interval: 300000, now: () => now, run: async () => { calls++; return true; }, ...timer });
+  scheduler.start(); now = 60000; scheduler.stop();
+  now = 3600000; scheduler.start();
+  assert.equal([...timer.jobs.values()][0].ms, 0);
+  timer.fire(); await flush();
+  assert.equal(calls, 1);
+  assert.equal([...timer.jobs.values()][0].ms, 300000);
+  scheduler.stop();
+});
+
+test('short repeated pauses retain the original refresh deadline', () => {
+  const timer = fakeTimer(); let now = 0;
+  const scheduler = createMonitoringRefresh({ interval: 300000, now: () => now, run: async () => true, ...timer });
+  scheduler.start(); now = 60000; scheduler.stop(); now = 120000; scheduler.start();
+  assert.equal([...timer.jobs.values()][0].ms, 180000);
+  scheduler.stop(); now = 240000; scheduler.start(); scheduler.start();
+  assert.equal(timer.jobs.size, 1);
+  assert.equal([...timer.jobs.values()][0].ms, 60000);
+  scheduler.stop();
+});
+
+test('focus after sleep replaces an overdue timer without duplicate requests', async () => {
+  const timer = fakeTimer(); let now = 0, calls = 0;
+  const scheduler = createMonitoringRefresh({ interval: 300000, now: () => now, run: async () => { calls++; return true; }, ...timer });
+  scheduler.start(); now = 3600000; scheduler.start(); scheduler.start();
+  assert.equal(timer.jobs.size, 1);
+  assert.equal([...timer.jobs.values()][0].ms, 0);
+  timer.fire(); scheduler.start(); await flush();
+  assert.equal(calls, 1);
+  assert.equal(timer.jobs.size, 1);
+  assert.equal([...timer.jobs.values()][0].ms, 300000);
+  scheduler.stop();
+});

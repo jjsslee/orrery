@@ -36,6 +36,7 @@ export function useMonitoringRefresh() {
       else { scheduler.stop(); useMonitoring.getState().pauseRequests(); }
     };
     visibility(); document.addEventListener('visibilitychange', visibility);
-    return () => { scheduler.stop(); const current = useMonitoring.getState(); if (inFlight && current.profile === profile && current.region === region && current.selectedResources === selected) current.pauseRequests(false); document.removeEventListener('visibilitychange', visibility); };
+    window.addEventListener('focus', visibility);
+    return () => { scheduler.stop(); const current = useMonitoring.getState(); if (inFlight && current.profile === profile && current.region === region && current.selectedResources === selected) current.pauseRequests(false); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', visibility); };
   }, [interval, range, active, selected, profile, region]);
 }
