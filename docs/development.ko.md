@@ -67,6 +67,7 @@ npm run package -- macos-arm64      # 대상 하나만 (macos-arm64 | macos-x64 
 ```bash
 npm run typecheck
 npm test
+npm run test:electron -w desktop
 npm run package
 ```
 

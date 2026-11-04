@@ -1,8 +1,9 @@
-import { createWriteStream } from 'node:fs';
-import { mkdir, realpath, symlink } from 'node:fs/promises';
+import { updateFs } from './update-fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { open, type Entry, type ZipFile } from 'yauzl';
+
+const { mkdir, realpath, symlink } = updateFs.promises;
 
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
@@ -54,7 +55,7 @@ export async function extractUpdate(zipPath: string, directory: string, platform
             if (!target || target.includes('\0') || isAbsolute(target) || !inside(root, resolve(dirname(dest), target))) throw new Error('ZIP의 심볼릭 링크가 앱 밖을 가리킵니다.');
             links.push({ path: dest, target });
           } else {
-            await pipeline(stream, createWriteStream(dest, { flags: 'wx', mode: (mode & 0o111) ? 0o755 : 0o644 }), { signal });
+            await pipeline(stream, updateFs.createWriteStream(dest, { fs: updateFs, flags: 'wx', mode: (mode & 0o111) ? 0o755 : 0o644 }), { signal });
           }
         })().then(() => zip.readEntry(), reject);
       });

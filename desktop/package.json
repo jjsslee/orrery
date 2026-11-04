@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test src/*.test.ts"
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:electron": "node --import tsx --test test/update-electron.test.ts"
   },
   "dependencies": {
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
     "@types/yauzl": "^2.10.3"
   }
 }

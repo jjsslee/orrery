@@ -54,6 +54,7 @@ See [`.env.example`](../.env.example). Configuration, credentials, cache entries
 ```bash
 npm run typecheck
 npm test
+npm run test:electron -w desktop
 npm run package
 ```
 

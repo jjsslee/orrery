@@ -71,9 +71,9 @@ Monitoring starts with the resources you choose. Compare supported service metri
 
 ## Updates without reinstalling every time
 
-Starting with **v0.10.0**, Orrery checks for newer stable releases while it is open. Choose **업데이트** (“Update”) to download, verify, replace, and restart the app, or **나중에** (“Later”) to keep using the current version. The **업데이트 → 업데이트 확인…** menu checks immediately; on Windows, press `Alt` to show the menu.
+Starting with **v0.11.1**, Orrery checks for newer stable releases while it is open. Choose **Update** to download, verify, replace, and restart the app, or **Later** to keep using the current version. The **Update → Check for updates…** menu checks immediately; on Windows, press `Alt` to show the menu.
 
-If the new app does not start successfully, Orrery attempts to restore the previous version. A writable installation location is required, and OS security policies can block an update or recovery. **Versions before v0.10.0 need one manual installation** to receive this feature.
+If the new app does not start successfully, Orrery attempts to restore the previous version. A writable installation location is required, and OS security policies can block an update or recovery. **Versions through v0.11.0 need one manual installation of v0.11.1 or later.** Their updater can fail with `Invalid package …/app.asar`. Quit Orrery, extract the latest ZIP, and replace the entire app (macOS) or Orrery folder (Windows). Keep your user data and AWS configuration folders.
 
 ## Know the boundaries
 

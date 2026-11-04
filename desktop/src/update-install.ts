@@ -1,7 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { updateFs } from './update-fs';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { extractUpdate } from './update-archive';
@@ -9,6 +8,8 @@ import { MAC_HELPER, macHelperArgs, windowsHelper, type InstallJob } from './upd
 import { downloadUpdate, type Update, type UpdateFetch } from './updates';
 
 const execute = promisify(execFile);
+const { access, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } = updateFs.promises;
+const { constants } = updateFs;
 const pendingPath = (userData: string) => join(userData, 'updates', 'pending.json');
 
 export function installTarget(executable: string, platform: string): string {
