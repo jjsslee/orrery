@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import type { SsoLoginStatus } from '@orrery/shared';
 import { api } from '../api/client';
@@ -5,6 +6,7 @@ import { useStore } from '../model/store';
 import { SsoLoginFlow } from '../model/sso-login';
 
 export function SsoLogin() {
+  useLanguage();
   const profile = useStore((s) => s.profile);
   const method = useStore((s) => s.profiles.find((p) => p.name === s.profile)?.method);
   const generation = useStore((s) => s.connectionGeneration);
@@ -51,13 +53,13 @@ export function SsoLogin() {
     }, (message) => { if (current()) { setStarting(false); setError(message); } });
   };
   return <div className="sso-login">
-    <button type="button" className="link-btn" onClick={start} disabled={pending}>{pending ? 'SSO 인증 중…' : 'SSO 로그인'}</button>
-    {(required || message || pending) && <section className="sso-login-card" aria-label="SSO 로그인" aria-live="polite">
-      <strong>{profile} · {pending ? '브라우저에서 로그인해 주세요' : 'SSO 인증 확인이 필요합니다'}</strong>
-      <p>{message ?? (pending ? '회사 계정 인증을 완료하면 자동으로 다시 연결합니다.' : '로그인하면 기본 브라우저가 열립니다. 완료 후 자동으로 자원을 불러옵니다.')}</p>
+    <button type="button" className="link-btn" onClick={start} disabled={pending}>{pending ? uiText('SSO 인증 중…') : uiText('SSO 로그인')}</button>
+    {(required || message || pending) && <section className="sso-login-card" aria-label={uiText("SSO 로그인")} aria-live="polite">
+      <strong>{profile} · {pending ? uiText('브라우저에서 로그인해 주세요') : uiText('SSO 인증 확인이 필요합니다')}</strong>
+      <p>{message ?? (pending ? uiText('회사 계정 인증을 완료하면 자동으로 다시 연결합니다.') : uiText('로그인하면 기본 브라우저가 열립니다. 완료 후 자동으로 자원을 불러옵니다.'))}</p>
       <div className="sso-login-actions">
-        {pending ? <button type="button" className="btn" onClick={() => { flow.current.cancel(); setStarting(false); setStatus(undefined); }}>취소</button>
-          : <><button type="button" className="btn" onClick={start}>브라우저에서 로그인</button><button type="button" className="link-btn" onClick={() => { setRequired(false); setError(undefined); setStatus(undefined); }}>닫기</button></>}
+        {pending ? <button type="button" className="btn" onClick={() => { flow.current.cancel(); setStarting(false); setStatus(undefined); }}>{uiText("취소")}</button>
+          : <><button type="button" className="btn" onClick={start}>{uiText("브라우저에서 로그인")}</button><button type="button" className="link-btn" onClick={() => { setRequired(false); setError(undefined); setStatus(undefined); }}>{uiText("닫기")}</button></>}
       </div>
     </section>}
   </div>;

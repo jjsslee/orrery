@@ -107,3 +107,20 @@ test('related explanations and candidate evidence start collapsed while candidat
   assert.match(html, /fixture condition/);
   assert.match(html, /전체 구성 조회 10\/1000/);
 });
+
+test('English metric cards translate errors, queue age and aggregation without changing original resource names',async()=>{
+ const {setLanguage}=await import('../i18n');
+ const metrics={scope,collectedAt:observed.succeededAt,range:{startTime:observed.attemptedAt,endTime:observed.succeededAt},queryCount:2,requestCount:1,maxRequests:10,series:{one:['오류 수','최장 대기 시간'].map((label,index)=>({id:String(index),name:index?'ApproximateAgeOfOldestMessage':'Errors',label,stat:'Sum',unit:'Count',latest:0,points:[{t:Date.parse(observed.attemptedAt),v:0}],status:'complete',period:180}))}};
+ try{
+  setLanguage('en');
+  const english=render({selectedResources:['one'],referenceResource:'one',metrics});
+  assert.match(english,/<h4>Errors<\/h4>/);
+  assert.match(english,/<h4>Oldest message age<\/h4>/);
+  assert.match(english,/3-minute aggregation/);
+  assert.doesNotMatch(english,/오류 수|최장 대기/);
+  assert.match(english,/fixture-worker/);
+  setLanguage('ko');
+  const korean=render({selectedResources:['one'],referenceResource:'one',metrics});
+  assert.match(korean,/<h4>오류 수<\/h4>/);assert.match(korean,/<h4>최장 대기 시간<\/h4>/);assert.match(korean,/3분 집계/);
+ }finally{setLanguage('ko')}
+});

@@ -1,3 +1,4 @@
+import { uiText, useLanguage, setLanguage } from '../i18n';
 import { TopologyGuide } from '../components/TopologyGuide';
 import { SsoLogin } from './SsoLogin';
 import { Activity, Eye, Moon, Radio, RotateCw, Sun, SlidersHorizontal } from 'lucide-react';
@@ -9,6 +10,7 @@ import { fmtRelative, maskAccount } from '../components/format';
 const METHOD_LABEL: Record<string, string> = { static: '액세스 키', 'static (session)': '세션 키', sso: 'SSO', 'assume-role': '역할 전환', process: '외부 프로세스', 'web-identity': '웹 자격', unknown: '설정 없음' };
 
 export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?: boolean; onToggleFilters?: () => void }) {
+  const language = useLanguage();
   const profiles = useStore((s) => s.profiles);
   const profile = useStore((s) => s.profile);
   const region = useStore((s) => s.region);
@@ -31,50 +33,57 @@ export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?:
         <div className="brand">
           <BrandMark size={22} spinning={loading.active} />
           <span className="brand-name">Orrery</span>
-          <span className="brand-tag">AWS 자원 관계 지도</span>
+          <span className="brand-tag">{uiText("AWS 자원 관계 지도")}</span>
         </div>
 
-        <div className="topbar-center" role="tablist" aria-label="보기">
-          <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>토폴로지</button>
-          <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>유형별</button>
-          <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>모니터링</button>
-          <button type="button" role="tab" aria-selected={view === 'cleanup'} className={`seg ${view === 'cleanup' ? 'on' : ''}`} onClick={() => setView('cleanup')}>정리 후보</button>
+        <div className="topbar-center" role="tablist" aria-label={uiText("보기")}>
+          <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>{uiText("토폴로지")}</button>
+          <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>{uiText("유형별")}</button>
+          <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>{uiText("모니터링")}</button>
+          <button type="button" role="tab" aria-selected={view === 'cleanup'} className={`seg ${view === 'cleanup' ? 'on' : ''}`} onClick={() => setView('cleanup')}>{uiText("정리 후보")}</button>
         </div>
 
         <div className="topbar-spacer" />
 
-        {view !== 'monitoring' && view !== 'cleanup' && <button type="button" className="btn filter-toggle" aria-label="검색·필터" aria-expanded={filtersOpen} aria-controls="resource-filters" onClick={onToggleFilters}><SlidersHorizontal size={15} aria-hidden /><span>필터</span></button>}
+        <label className="language-picker">
+          <select aria-label={uiText('언어')} value={language} onChange={(event) => setLanguage(event.target.value === 'ko' ? 'ko' : 'en')}>
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+
+        {view !== 'monitoring' && view !== 'cleanup' && <button type="button" className="btn filter-toggle" aria-label={uiText("검색·필터")} aria-expanded={filtersOpen} aria-controls="resource-filters" onClick={onToggleFilters}><SlidersHorizontal size={15} aria-hidden /><span>{uiText("필터")}</span></button>}
         <TopologyGuide />
-        <span className="readonly" title="서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다">
-          <Eye size={13} aria-hidden /><span className="readonly-text">읽기 전용</span>
+        <span className="readonly" title={uiText("서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다")}>
+          <Eye size={13} aria-hidden /><span className="readonly-text">{uiText("읽기 전용")}</span>
         </span>
-        <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? '라이트 테마로' : '다크 테마로'}>
+        <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? uiText('라이트 테마로') : uiText('다크 테마로')}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </div>
-      <div className="topbar-right" role="group" aria-label="연결·조회 도구">
-        <div className="conn" role="group" aria-label="AWS 연결">
+      <div className="topbar-right" role="group" aria-label={uiText("연결·조회 도구")}>
+        <div className="conn" role="group" aria-label={uiText("AWS 연결")}>
           <Dropdown
-            label="AWS 프로필"
+            label={uiText("AWS 프로필")}
             value={profile}
-            placeholder={profiles.length ? '프로필 선택' : '프로필 없음'}
+            placeholder={profiles.length ? uiText('프로필 선택') : uiText('프로필 없음')}
             onChange={(v) => void setProfile(v)}
             mono
             width={184}
-            options={profiles.map((p) => ({ value: p.name, label: p.name, hint: METHOD_LABEL[p.method] ?? p.method, disabled: p.method === 'unknown' }))}
+            options={profiles.map((p) => ({ value: p.name, label: p.name, hint: uiText(METHOD_LABEL[p.method] ?? p.method), disabled: p.method === 'unknown' }))}
           />
           <Dropdown
-            label="리전"
+            label={uiText("리전")}
             value={region}
-            placeholder="리전 선택"
+            placeholder={uiText("리전 선택")}
             onChange={(v) => void setRegion(v)}
             mono
             width={156}
             options={(regions.length ? regions : region ? [region] : []).map((r) => ({ value: r, label: r }))}
           />
           <div className="identity" title={identity?.arn ?? ''}>
-            {identity ? <span className="mono identity-account">{maskAccount(identity.account)}</span> : <span className="muted identity-account">계정 확인 중</span>}
-            <button type="button" className="link-btn" onClick={() => void reconnect()} disabled={!profile || loading.active} title="AWS 자격증명과 계정을 다시 확인하고 캐시를 분리합니다">다시 연결</button>
+            {identity ? <span className="mono identity-account">{maskAccount(identity.account)}</span> : <span className="muted identity-account">{uiText("계정 확인 중")}</span>}
+            <button type="button" className="link-btn" onClick={() => void reconnect()} disabled={!profile || loading.active} title={uiText("AWS 자격증명과 계정을 다시 확인하고 캐시를 분리합니다")}>{uiText("다시 연결")}</button>
           </div>
           <SsoLogin />
         </div>
@@ -88,18 +97,18 @@ export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?:
           aria-checked={live}
           onClick={() => setLive(!live)}
           disabled={!graph}
-          title="상태는 2분, 구성은 10분마다 갱신합니다. CloudWatch 지표는 전체 지표 조회 버튼으로만 읽으며 비용이 발생할 수 있습니다. 탭이 보이지 않으면 멈춥니다."
+          title={uiText("상태는 2분, 구성은 10분마다 갱신합니다. CloudWatch 지표는 전체 지표 조회 버튼으로만 읽으며 비용이 발생할 수 있습니다. 탭이 보이지 않으면 멈춥니다.")}
         >
           <Radio size={13} className={liveBusy ? 'spin' : ''} />
-          <span className="live-label">라이브</span>
+          <span className="live-label">{uiText("라이브")}</span>
           {live && <span className="live-dot" aria-hidden />}
           {live && liveStatusAt && <span className="live-when tnum">{fmtRelative(liveStatusAt)}</span>}
         </button>
-        {statusError && <span role="status" className="muted" title={statusError}>조회 문제 · 이전 상태 포함</span>}
-        <button type="button" className="btn" onClick={() => void loadMetrics(true)} disabled={!graph || metricsLoading} aria-label={metricsLoading ? '지표 조회 중' : '전체 지표 조회'} title="현재 구성의 전체 자원 CloudWatch 지표를 조회합니다. 비용이 발생할 수 있습니다."><Activity size={14} className={metricsLoading ? 'spin' : ''} aria-hidden /><span>{metricsLoading ? '지표 조회 중' : '전체 지표 조회'}</span></button>
-        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} aria-label={graph ? `다시 수집 · ${fmtRelative(graph.collectedAt)}` : '수집'} title="캐시를 무시하고 구성을 다시 수집합니다">
+        {uiText(statusError ?? '') && <span role="status" className="muted" title={uiText(statusError ?? '')}>{uiText("조회 문제 · 이전 상태 포함")}</span>}
+        <button type="button" className="btn" onClick={() => void loadMetrics(true)} disabled={!graph || metricsLoading} aria-label={metricsLoading ? uiText('지표 조회 중') : uiText('전체 지표 조회')} title={uiText("현재 구성의 전체 자원 CloudWatch 지표를 조회합니다. 비용이 발생할 수 있습니다.")}><Activity size={14} className={metricsLoading ? 'spin' : ''} aria-hidden /><span>{metricsLoading ? uiText('지표 조회 중') : uiText('전체 지표 조회')}</span></button>
+        <button type="button" className="btn" onClick={() => void load(true)} disabled={loading.active} aria-label={graph ? uiText`다시 수집 · ${fmtRelative(graph.collectedAt)}` : uiText('수집')} title={uiText("캐시를 무시하고 구성을 다시 수집합니다")}>
           <RotateCw size={14} className={loading.active ? 'spin' : ''} />
-          <span>{graph ? `다시 수집 · ${fmtRelative(graph.collectedAt)}` : '수집'}</span>
+          <span>{graph ? uiText`다시 수집 · ${fmtRelative(graph.collectedAt)}` : uiText('수집')}</span>
         </button>
         </>}
 

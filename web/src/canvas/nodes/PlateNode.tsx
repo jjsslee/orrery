@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { uiText, useLanguage } from '../../i18n';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { Category, ResourceNode as RNode } from '@orrery/shared';
 import { TypeIcon } from '../../components/TypeIcon';
@@ -9,14 +10,15 @@ export type PlateNodeData = { node?: RNode; lane?: { category: Category; label: 
 export type PlateNodeType = Node<PlateNodeData, 'plate'>;
 
 function PlateNodeImpl({ data }: NodeProps<PlateNodeType>) {
+  useLanguage();
   const { node, lane, dim, count } = data;
   const kind = lane ? 'lane' : node?.type ?? 'vpc';
-  const title = lane ? lane.label : node?.name ?? '';
+  const title = lane ? uiText(lane.label) : node?.name ?? '';
   const sub = lane
     ? null
     : node?.type === 'vpc'
       ? String(node.props['CIDR'] ?? '')
-      : [node?.props['CIDR'], node?.statusLabel].filter(Boolean).join(' · ');
+      : [node?.props['CIDR'], node?.statusLabel && uiText(node.statusLabel)].filter(Boolean).join(' · ');
   const laneIndex = lane ? CATEGORY_ORDER.indexOf(lane.category) : -1;
   return (
     <div className={`plate plate-${kind} ${dim ? 'dim' : ''} ${lane ? `cat-${lane.category}` : ''}`} style={{ '--lane': laneIndex } as React.CSSProperties}>

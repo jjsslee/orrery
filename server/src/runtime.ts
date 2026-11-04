@@ -10,6 +10,7 @@ import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { extname, join, relative, sep } from 'node:path';
 import { readPrivateFile } from './private-files.ts';
+import type { Language } from '@orrery/shared';
 
 /** Electron hands a utility process this port to talk back to the main process. */
 const parentPort = (process as NodeJS.Process & { parentPort?: { postMessage(message: unknown): void } }).parentPort;
@@ -24,6 +25,8 @@ export const BUILD = typeof __ORRERY_BUILD__ === 'string' ? __ORRERY_BUILD__ : '
 export function showWindow(url: string): void {
   parentPort?.postMessage({ url });
 }
+
+export function notifyLanguage(language: Language): void { parentPort?.postMessage({ language }); }
 
 /** ~/Library/Application Support/Orrery, %LOCALAPPDATA%\Orrery, or $XDG_DATA_HOME/orrery. */
 export function userDataDir(): string {

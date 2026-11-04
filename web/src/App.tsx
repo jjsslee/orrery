@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from './i18n';
 import './styles/topology-guide.css';
 import './styles/cleanup.css';
 import { useEffect, useState } from 'react';
@@ -13,8 +14,11 @@ import { SetupGuide } from './canvas/SetupGuide';
 import { Monitoring } from './views/Monitoring';
 import { Cleanup } from './views/Cleanup';
 import { TypeView } from './views/TypeView';
+import { api } from './api/client';
 
 export default function App() {
+  const language = useLanguage();
+  useEffect(() => { void api.setLanguage(language).catch(() => {}); }, [language]);
   const bootstrap = useStore((s) => s.bootstrap);
   const view = useStore((s) => s.view);
   const graph = useStore((s) => s.graph);
@@ -98,15 +102,15 @@ export default function App() {
     <div className={`app ${view === 'cleanup' ? 'cleanup-app' : view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''} ${filtersOpen ? 'filters-open' : ''}`}>
       <TopBar filtersOpen={filtersOpen} onToggleFilters={() => filtersOpen ? closeFilters() : setFiltersOpen(true)} />
       {view !== 'monitoring' && view !== 'cleanup' && <>
-        {filtersOpen && <button type="button" className="rail-backdrop" aria-label="필터 닫기" tabIndex={-1} onClick={closeFilters} />}
+        {filtersOpen && <button type="button" className="rail-backdrop" aria-label={uiText("필터 닫기")} tabIndex={-1} onClick={closeFilters} />}
         <Rail onClose={closeFilters} />
       </>}
-      <main className="stage" aria-label={view === 'cleanup' ? '정리 후보' : view === 'monitoring' ? '모니터링' : view === 'topology' ? '토폴로지' : '유형별 보기'}>
+      <main className="stage" aria-label={view === 'cleanup' ? uiText('정리 후보') : view === 'monitoring' ? uiText('모니터링') : view === 'topology' ? uiText('토폴로지') : uiText('유형별 보기')}>
         {view === 'monitoring' ? <Monitoring /> : <>
         {view === 'cleanup' ? <Cleanup /> : view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
         <LoadOverlay />
         {setup === 'needed' && <SetupGuide />}
-        {setup === 'done' && !graph && idle && (region ? <div className="empty">프로필을 선택하면 수집을 시작합니다.</div> : <RegionPrompt />)}
+        {setup === 'done' && !graph && idle && (region ? <div className="empty">{uiText("프로필을 선택하면 수집을 시작합니다.")}</div> : <RegionPrompt />)}
         </>}
       </main>
       {view !== 'monitoring' && view !== 'cleanup' && selectedId && <Inspector />}

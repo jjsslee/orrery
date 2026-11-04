@@ -18,6 +18,7 @@ The root READMEs introduce the product, installation, and first use. Development
 | Guide | Language | Read it for |
 |---|---|---|
 | [Development](development.md) / [개발 및 패키징](development.ko.md) | English / 한국어 | Source setup, configuration, checks and builds |
+| [다국어 지원](localization.md) | 한국어 | 번역 추가, 언어 저장과 데스크톱 연동, 검증 방법 |
 | [구조와 보안 경계](architecture.ko.md) | 한국어 | Collectors, cache, local authentication, renderer and AWS guard |
 | [자체 업데이트 운영 가이드](self-update.md) | 한국어 | Publishing releases, update transactions, backup and recovery |
 | [과거 검증 기록](verification-history.ko.md) | 한국어 | Dated results and their limitations |

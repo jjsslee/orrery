@@ -1,3 +1,4 @@
+import { locale, uiText } from '../i18n';
 export function fmtNumber(v: number | null | undefined, unit?: string): string {
   if (v == null || Number.isNaN(v)) return '–';
   const u = (unit ?? '').toLowerCase();
@@ -29,33 +30,40 @@ export function fmtRelative(iso: string | number | undefined): string {
   const t = typeof iso === 'number' ? iso : Date.parse(iso);
   const diff = Date.now() - t;
   const m = Math.round(diff / 60_000);
-  if (m < 1) return '방금';
-  if (m < 60) return `${m}분 전`;
+  if (m < 1) return uiText('방금');
+  if (m < 60) return uiText`${m}분 전`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h}시간 전`;
+  if (h < 24) return uiText`${h}시간 전`;
   const d = Math.round(h / 24);
-  if (d < 30) return `${d}일 전`;
-  return new Date(t).toLocaleDateString('ko-KR');
+  if (d < 30) return uiText`${d}일 전`;
+  return new Date(t).toLocaleDateString(locale());
 }
 
 export function fmtDateTime(iso: string | number | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /** Shows prop values; ISO dates become relative, booleans become 예/아니오 */
-export function fmtProp(v: string | number | boolean | null): string {
+export function fmtProp(v: string | number | boolean | null, key?: string): string {
   if (v === null || v === undefined || v === '') return '–';
-  if (typeof v === 'boolean') return v ? '예' : '아니오';
-  if (typeof v === 'number') return v.toLocaleString('ko-KR');
+  if (typeof v === 'boolean') return v ? uiText('예') : uiText('아니오');
+  if (typeof v === 'number') return v.toLocaleString(locale());
+  if (key === '볼륨') {
+    const volume = v.match(/^(\d+)개, ([\d.]+) GiB \((.+)\)$/);
+    if (volume) {
+      const details = volume[3].split(', ').map(part => part === '암호화' ? uiText('암호화됨') : uiText(part)).join(', ');
+      return uiText`${volume[1]}개, ${volume[2]} GiB (${details})`;
+    }
+  }
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) {
     const age = Date.now() - Date.parse(v);
     const withYear = age > 300 * 86_400_000;
-    const d = new Date(v).toLocaleString('ko-KR', { year: withYear ? 'numeric' : undefined, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const d = new Date(v).toLocaleString(locale(), { year: withYear ? 'numeric' : undefined, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     return age < 30 * 86_400_000 ? `${d} (${fmtRelative(v)})` : d;
   }
-  return v;
+  return key && ['상태', '배치 근거', '소속 설명', '확인 범위', '등록 대상 조회', 'VPC 연결 조회', '헬스', '로그', '유형', '암호화', '리스너', '런타임'].includes(key) ? uiText(v) : v;
 }
 
 export function maskAccount(id?: string): string {

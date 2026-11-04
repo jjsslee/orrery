@@ -16,6 +16,7 @@ async function json<T>(url: string, signal?: AbortSignal, body?: unknown): Promi
 }
 
 export const api = {
+  setLanguage: (language: 'en' | 'ko') => json<{ language: 'en' | 'ko' }>('/api/preferences/language', undefined, { language }),
   ssoLogin: (profile: string) => json<SsoLoginStatus>('/api/sso/login', undefined, { profile }),
   ssoLoginStatus: (id: string) => json<SsoLoginStatus>(`/api/sso/login/${encodeURIComponent(id)}`),
   ssoLoginCancel: (id: string) => json<SsoLoginStatus>(`/api/sso/login/${encodeURIComponent(id)}/cancel`, undefined, {}),

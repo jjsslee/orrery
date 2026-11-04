@@ -1,4 +1,5 @@
 import { registerSsoLoginRoutes } from './aws/sso-login.ts';
+import { registerLanguageRoute } from './http/language.ts';
 import { registerCleanupRoutes } from './cleanup/routes.ts';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
@@ -23,7 +24,7 @@ import { Cache } from './cache.ts';
 import { metricsForGraph } from './metrics/index.ts';
 import { createApiToken, registerLocalSecurity, SECURITY_HEADERS } from './http/security.ts';
 import { privateDirectory, readPrivateFile, writePrivateFile } from './private-files.ts';
-import { BUILD, orreryAt, packaged, portFree, replaceOrrery, showWindow, userDataDir, webFiles } from './runtime.ts';
+import { BUILD, notifyLanguage, orreryAt, packaged, portFree, replaceOrrery, showWindow, userDataDir, webFiles } from './runtime.ts';
 import { readFileSync } from 'node:fs';
 
 /** Minimal .env loader (KEY=VALUE lines, # comments); never overrides variables already set. */
@@ -74,6 +75,7 @@ const app = Fastify({
 const apiToken = createApiToken();
 registerLocalSecurity(app, apiToken);
 registerSsoLoginRoutes(app);
+registerLanguageRoute(app, notifyLanguage);
 const cache = new Cache(packaged ? join(userDataDir(), 'cache') : join(here, '..', '..', '.orrery-cache'));
 
 interface Session {

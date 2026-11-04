@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from '../i18n';
 import { useId, useMemo, useRef, useState } from 'react';
 import { area as d3area, line as d3line, curveMonotoneX } from 'd3-shape';
 import type { MetricSeries } from '@orrery/shared';
@@ -17,6 +18,7 @@ interface Props {
 
 /** A single-series sparkline with a crosshair tooltip (values also live in the table view). */
 export function Sparkline({ series, width = 296, height = 56, color = 'var(--ink-2)', timeDomain, valueDomain, hoverTime, onHoverTime, onSelectRange }: Props) {
+  useLanguage();
   const id = useId();
   const [localHover, setLocalHover] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
@@ -44,7 +46,7 @@ export function Sparkline({ series, width = 296, height = 56, color = 'var(--ink
     return { x, y, t0, t1, line: runs.map((run) => ln(run) ?? '').join(''), area: runs.map((run) => ar(run) ?? '').join(''), singletons: runs.filter((run) => run.length === 1).map((run) => run[0]), max, min };
   }, [pts, series.startTime, series.endTime, series.period, series.points, timeDomain?.start, timeDomain?.end, valueDomain?.min, valueDomain?.max, width, height]);
 
-  if (!geo) return <div className="spark-empty">{series.status === 'error' ? '조회 실패' : series.status === 'partial' ? '부분 결과 · 데이터 없음' : '데이터 없음'}</div>;
+  if (!geo) return <div className="spark-empty">{series.status === 'error' ? uiText('조회 실패') : series.status === 'partial' ? uiText('부분 결과 · 데이터 없음') : uiText('데이터 없음')}</div>;
   const nearest = hover == null ? null : pts.reduce((best, p) => Math.abs(p.t - hover) < Math.abs(best.t - hover) ? p : best, pts[0]);
   const hp = nearest && (series.period == null || Math.abs(nearest.t - hover!) <= series.period * 500) ? nearest : null;
   const pointerTime = (clientX: number, element: SVGSVGElement) => {
@@ -58,7 +60,7 @@ export function Sparkline({ series, width = 296, height = 56, color = 'var(--ink
         width={width}
         height={height}
         role="img"
-        aria-label={`${series.label} 최근 추이`}
+        aria-label={uiText`${uiText(series.label ?? '')} 최근 추이`}
         onMouseMove={(e) => {
           const time = pointerTime(e.clientX, e.currentTarget);
           setLocalHover(time); onHoverTime?.(time);
@@ -87,7 +89,7 @@ export function Sparkline({ series, width = 296, height = 56, color = 'var(--ink
       </svg>
       {hover != null && (
         <div className="spark-tip" style={{ left: Math.min(Math.max(geo.x(hover), 60), width - 60) }}>
-          <span className="tnum">{hp ? fmtNumber(hp.v, series.unit) : '결측'}</span>
+          <span className="tnum">{hp ? fmtNumber(hp.v, series.unit) : uiText('결측')}</span>
           <span className="spark-tip-time">{fmtDateTime(hover)}</span>
         </div>
       )}

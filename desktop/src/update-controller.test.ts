@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
+import { createTranslator, type Language } from '@orrery/shared';
 import type { Update } from './updates';
 
 // Run the real controller with native dialogs/quit replaced, without opening windows or touching AWS/user data.
@@ -10,7 +11,7 @@ const source = transformSync(readFileSync(new URL('./update-controller.ts', impo
 type Controller = { start(): void; ready(): Promise<void>; check(manual: boolean): Promise<void> };
 const available: Update = { version: '0.10.0', name: 'Orrery-macos-arm64.zip', url: 'https://github.com/jjsslee/orrery/releases/download/v0.10.0/Orrery-macos-arm64.zip', size: 1024, sha256: '0'.repeat(64) };
 
-function harness(options: { update?: Update; answer?: number; failure?: 'check' | 'prepare' | 'helper'; lookup?: () => Promise<Update | undefined>; prepare?: (signal: AbortSignal) => Promise<{ directory: string }> } = {}) {
+function harness(options: { language?: () => Language; update?: Update; answer?: number; failure?: 'check' | 'prepare' | 'helper'; lookup?: () => Promise<Update | undefined>; prepare?: (signal: AbortSignal) => Promise<{ directory: string }> } = {}) {
   const actions: string[] = [], dialogs: Array<{ message: string; detail?: string }> = [];
   const events = new Map<string, (event?: { preventDefault(): void }) => void>();
   const timers: Array<{ callback: () => void; delay: number }> = [];
@@ -24,6 +25,7 @@ function harness(options: { update?: Update; answer?: number; failure?: 'check' 
     quit: () => { actions.push('quit'); let prevented = false; events.get('before-quit')?.({ preventDefault: () => { prevented = true; } }); if (!prevented) destroyed = true; },
   };
   const dependencies = {
+    '@orrery/shared': { createTranslator },
     electron: { app, dialog: { showMessageBox: async (dialog: { message: string }) => { dialogs.push(dialog); return { response: options.answer ?? 0 }; } } },
     './updates': { checkUpdate: async () => { await record('check'); return options.lookup ? options.lookup() : options.update; } },
     './update-install': {
@@ -32,7 +34,7 @@ function harness(options: { update?: Update; answer?: number; failure?: 'check' 
       startUpdateHelper: async () => { await record('helper'); }, cancelPreparedUpdate: async () => { await record('cancel'); },
     },
   };
-  type Constructor = new (window: () => unknown, server: () => number) => Controller & { bindMenu(item: unknown): void };
+  type Constructor = new (window: () => unknown, server: () => number, language?: () => Language) => Controller & { bindMenu(item: unknown): void };
   const module = { exports: {} as { UpdateController: Constructor } };
   runInNewContext(source, {
     module, exports: module.exports, require: (name: keyof typeof dependencies) => dependencies[name], AbortController,
@@ -41,7 +43,7 @@ function harness(options: { update?: Update; answer?: number; failure?: 'check' 
     setInterval: (callback: () => void, delay: number) => { timers.push({ callback, delay }); return { unref() {} }; },
     clearTimeout() {}, clearInterval() {},
   });
-  const controller = new module.exports.UpdateController(() => ({ isDestroyed: () => destroyed, setProgressBar: (value: number) => actions.push(`progress:${value}`) }), () => 42);
+  const controller = new module.exports.UpdateController(() => ({ isDestroyed: () => destroyed, setProgressBar: (value: number) => actions.push(`progress:${value}`) }), () => 42, options.language);
   controller.bindMenu(item);
   return { controller, app, events, timers, actions, dialogs, item };
 }
@@ -159,4 +161,23 @@ test('only packaged apps schedule checks, and startup acknowledgement is delegat
   assert.equal(development.timers.length, 0);
   assert.match(development.dialogs[0].message, /설치한 Orrery/);
   assert.equal(development.actions.includes('check'), false);
+});
+
+test('update prompts and a rebound busy menu follow the selected language', async () => {
+  let language: Language='en';
+  let resolve!: (update: Update | undefined) => void;
+  const h=harness({language:()=>language, lookup:()=>new Promise(done=>{resolve=done})});
+  assert.match(h.item.label,/Check for updates/i);
+  const pending=h.controller.check(true);
+  await Promise.resolve(); await Promise.resolve();
+  language='ko';
+  const rebound={label:'',enabled:true};
+  h.controller.bindMenu(rebound);
+  assert.equal(rebound.enabled,false);
+  assert.match(rebound.label,/확인 중/);
+  language='en';h.controller.bindMenu(rebound);
+  assert.match(rebound.label,/Checking/i);
+  resolve(undefined);await pending;
+  assert.match(h.dialogs[0].message,/latest|up to date/i);
+  assert.equal(rebound.enabled,true);
 });

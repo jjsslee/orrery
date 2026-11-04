@@ -9,6 +9,9 @@
 }
 .app.has-inspector { grid-template-columns: var(--rail-w) 1fr var(--inspector-w); }
 .topbar { grid-area: top; }
+.language-picker { flex-shrink: 0; }
+.language-picker select { height: 30px; max-width: 100px; padding: 0 7px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+.language-picker select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .rail { grid-area: rail; }
 .stage { grid-area: stage; position: relative; min-width: 0; overflow: hidden; background: var(--canvas); }
 .inspector { grid-area: insp; }
@@ -442,8 +445,8 @@
   :root { --topbar-h: 140px; }
   .topbar-main { flex-wrap: wrap; }
   .topbar-center { order: 1; width: 100%; }
-  .topbar-center .seg { flex: 1; }
-  .topbar-right .dd { width: 144px !important; }
+  .topbar-center .seg { flex: 1 0 auto; min-width: 0; padding-inline: 6px; font-size: 11px; }
+  .topbar-right .dd { width: 140px !important; }
 }
 
 /* ---------- tags ---------- */

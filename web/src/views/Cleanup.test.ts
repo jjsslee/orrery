@@ -32,3 +32,19 @@ test('latest history separates metadata, activity and state and labels incomplet
  const partial=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history:{...h,coverage:'partial',duration:{basis:'unknown'}}}));assert.match(partial,/조회된 범위의 최신 기록/);assert.match(partial,/전체 범위의 마지막 기록을 확정할 수 없습니다/);
  const empty=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history:{...h,events:[],duration:{basis:'unknown'}}}));assert.match(empty,/최근 90일 내 해당 이력 확인 안 됨/);
 });
+
+test('English cleanup keeps resource/tag text and distinguishes absent state history',async()=>{
+ const {setLanguage}=await import('../i18n');
+ setLanguage('en');
+ try{
+  const tagged={...graph,nodes:[{...graph.nodes[0],name:'정상',tags:{상태:'정상'},props:{설명:'정상'}}]};
+  const html=renderToStaticMarkup(createElement(CleanupWorkspace,{graph:tagged,generation:0}));
+  assert.match(html,/<h2>정상<\/h2>/);assert.match(html,/<dt>상태<\/dt><dd>정상<\/dd>/);
+  assert.match(html,/<dt>Description<\/dt><dd>정상<\/dd>/);
+  assert.match(html,/Detached EBS|Unattached EBS/i);
+  const history:CleanupHistory={scope,findingId:'f',graphCollectedAt:graph.collectedAt,analyzedAt:graph.collectedAt,start:'2026-09-27T00:00:00Z',end:graph.collectedAt,lookbackStart:'2026-07-29T00:00:00Z',region:scope.region,pages:1,coverage:'complete',events:[],duration:{basis:'unknown'},verdict:'insufficient',messages:[]};
+  const empty=renderToStaticMarkup(createElement(CleanupHistoryPanel,{history}));
+  assert.match(empty,/Cannot establish when the current state began/);
+  assert.doesNotMatch(empty,/[가-힣]/);
+ }finally{setLanguage('ko')}
+});

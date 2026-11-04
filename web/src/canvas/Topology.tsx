@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from '../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background, BackgroundVariant, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, MarkerType, Position,
@@ -29,6 +30,7 @@ const Z_PLATE = -10, Z_EDGE = 0, Z_CARD = 10;
 const CAT_HEX: Record<string, string> = { compute: '#c1821f', network: '#974fed', database: '#6ca2fd', storage: '#77c58e', security: '#c71f28', integration: '#e55caf' };
 
 function TopologyInner() {
+  useLanguage();
   const graph = useStore((s) => s.graph);
   const metrics = useStore((s) => s.metrics);
   const overlays = useStore((s) => s.overlays);
@@ -261,13 +263,13 @@ function TopologyInner() {
       {scene && scene.nodes.length === 0 && (
         <div className="empty">
           <div className="empty-card">
-            <div className="empty-title">{query ? `'${query}'에 맞는 자원이 없습니다` : statusFilter ? '선택한 상태에 맞는 자원이 없습니다' : tagFilters.length ? '선택한 태그를 가진 자원이 없습니다' : '표시할 자원이 없습니다'}</div>
+            <div className="empty-title">{query ? uiText`'${query}'에 맞는 자원이 없습니다` : statusFilter ? uiText('선택한 상태에 맞는 자원이 없습니다') : tagFilters.length ? uiText('선택한 태그를 가진 자원이 없습니다') : uiText('표시할 자원이 없습니다')}</div>
             <div className="empty-sub">
               {scene.hiddenMatches > 0
-                ? '다른 필터로 가려진 자원이 있습니다. 유형·상태·태그 필터를 조정하세요.'
-                : '검색어를 바꾸거나 유형·상태·태그 필터를 조정하세요.'}
+                ? uiText('다른 필터로 가려진 자원이 있습니다. 유형·상태·태그 필터를 조정하세요.')
+                : uiText('검색어를 바꾸거나 유형·상태·태그 필터를 조정하세요.')}
             </div>
-            <button type="button" className="btn" onClick={() => useStore.getState().resetFilters()}>필터 초기화</button>
+            <button type="button" className="btn" onClick={() => useStore.getState().resetFilters()}>{uiText("필터 초기화")}</button>
           </div>
         </div>
       )}
@@ -278,6 +280,7 @@ function TopologyInner() {
 }
 
 export function Topology() {
+  useLanguage();
   return (
     <ReactFlowProvider>
       <TopologyInner />

@@ -1,3 +1,4 @@
+import { locale, uiText, useLanguage } from '../i18n';
 import { useMemo, useState } from 'react';
 import type { ResourceNode, ResourceType, Status } from '@orrery/shared';
 import { CATEGORY_LABEL, STATUS_LABEL } from '@orrery/shared';
@@ -19,6 +20,7 @@ function MiniTrend({ points, color }: { points: number[]; color: string }) {
 }
 
 export function TypeView() {
+  useLanguage();
   const graph = useStore((s) => s.graph);
   const metrics = useStore((s) => s.metrics);
   const query = useStore((s) => s.query);
@@ -67,15 +69,15 @@ export function TypeView() {
   return (
     <div className="typeview">
       <div className="tv-summary">
-        <div className="tile"><div className="tile-value">{total.toLocaleString()}</div><div className="tile-label">자원</div></div>
-        <div className="tile"><div className="tile-value">{graph.edges.length.toLocaleString()}</div><div className="tile-label">관계</div></div>
-        <div className="tile st-critical"><div className="tile-value">{statusTotals.critical}</div><div className="tile-label">위험</div></div>
-        <div className="tile st-warning"><div className="tile-value">{statusTotals.warning}</div><div className="tile-label">주의</div></div>
-        <div className="tile"><div className="tile-value">{fmtRelative(graph.collectedAt)}</div><div className="tile-label">마지막 수집</div></div>
-        <div className="tv-sort" role="group" aria-label="정렬">
+        <div className="tile"><div className="tile-value">{total.toLocaleString(locale())}</div><div className="tile-label">{uiText("자원")}</div></div>
+        <div className="tile"><div className="tile-value">{graph.edges.length.toLocaleString(locale())}</div><div className="tile-label">{uiText("관계")}</div></div>
+        <div className="tile st-critical"><div className="tile-value">{statusTotals.critical}</div><div className="tile-label">{uiText("위험")}</div></div>
+        <div className="tile st-warning"><div className="tile-value">{statusTotals.warning}</div><div className="tile-label">{uiText("주의")}</div></div>
+        <div className="tile"><div className="tile-value">{fmtRelative(graph.collectedAt)}</div><div className="tile-label">{uiText("마지막 수집")}</div></div>
+        <div className="tv-sort" role="group" aria-label={uiText("정렬")}>
           {(['status', 'traffic', 'name'] as const).map((k) => (
             <button key={k} type="button" className={`seg ${sortBy === k ? 'on' : ''}`} aria-pressed={sortBy === k} onClick={() => setSortBy(k)}>
-              {k === 'status' ? '상태순' : k === 'traffic' ? '활동량순' : '이름순'}
+              {k === 'status' ? uiText('상태순') : k === 'traffic' ? uiText('활동량순') : uiText('이름순')}
             </button>
           ))}
         </div>
@@ -86,7 +88,7 @@ export function TypeView() {
         if (!types.length) return null;
         return (
           <section key={c} className={`tv-cat cat-${c}`}>
-            <h2 className="tv-cat-title"><span className="cat-swatch" />{CATEGORY_LABEL[c]}</h2>
+            <h2 className="tv-cat-title"><span className="cat-swatch" />{uiText(CATEGORY_LABEL[c] ?? '')}</h2>
             {types.map((t) => {
               const list = groups.get(t)!;
               const meta = TYPE_META[t];
@@ -97,16 +99,16 @@ export function TypeView() {
                 <section key={t} className="tv-type">
                   <header className="tv-type-head">
                     <span className="tv-type-icon"><TypeIcon type={t} size={16} /></span>
-                    <h3>{meta.label}</h3>
+                    <h3>{uiText(meta.label ?? '')}</h3>
                     <span className="tv-type-count tnum">{list.length}</span>
-                    <div className="status-bar small" role="img" aria-label={STATUS_ORDER.filter((s) => counts[s]).map((s) => `${STATUS_LABEL[s]} ${counts[s]}`).join(', ')}>
+                    <div className="status-bar small" role="img" aria-label={STATUS_ORDER.filter((s) => counts[s]).map((s) => `${uiText(STATUS_LABEL[s] ?? '')} ${counts[s]}`).join(', ')}>
                       {STATUS_ORDER.filter((s) => counts[s]).map((s) => <span key={s} className={`status-seg st-${s}`} style={{ flex: counts[s] }} />)}
                     </div>
-                    <span className="tv-type-legend">{STATUS_ORDER.filter((s) => counts[s]).map((s) => <span key={s} className={`st-${s}`}><span className="status-dot" />{STATUS_LABEL[s]} {counts[s]}</span>)}</span>
+                    <span className="tv-type-legend">{STATUS_ORDER.filter((s) => counts[s]).map((s) => <span key={s} className={`st-${s}`}><span className="status-dot" />{uiText(STATUS_LABEL[s] ?? '')} {counts[s]}</span>)}</span>
                   </header>
                   <table className="tv-table">
                     <thead>
-                      <tr><th>이름</th><th>식별자</th><th>상태</th><th>{meta.keyProp ?? '속성'}</th><th>관계</th><th>최근 3시간</th></tr>
+                      <tr><th>{uiText("이름")}</th><th>{uiText("식별자")}</th><th>{uiText("상태")}</th><th>{uiText(meta.keyProp ?? '속성')}</th><th>{uiText("관계")}</th><th>{uiText("최근 3시간")}</th></tr>
                     </thead>
                     <tbody>
                       {list.slice(0, shown).map((n) => {
@@ -118,13 +120,13 @@ export function TypeView() {
                             <td className="tv-name">
                               <span className="tv-name-text" title={n.name}>{n.name}</span>
                               {n.alarms?.length ? <span className="rnode-alarm">{n.alarms.length}</span> : null}
-                              <button type="button" className="tv-locate" title="지도에서 보기" aria-label={`${n.name} 지도에서 보기`} onClick={(e) => { e.stopPropagation(); locate(n.id); }}>
+                              <button type="button" className="tv-locate" title={uiText("지도에서 보기")} aria-label={uiText`${n.name} 지도에서 보기`} onClick={(e) => { e.stopPropagation(); locate(n.id); }}>
                                 <LocateFixed size={13} />
                               </button>
                             </td>
                             <td className="mono tv-id" title={n.arn ?? n.nativeId}>{n.nativeId.length > 36 ? `…${n.nativeId.slice(-34)}` : n.nativeId}</td>
                             <td><StatusDot status={n.status} showLabel label={n.statusLabel ?? undefined} /></td>
-                            <td className="tv-prop">{keyVal != null ? fmtProp(keyVal) : '–'}</td>
+                            <td className="tv-prop">{keyVal != null ? fmtProp(keyVal,meta.keyProp) : '–'}</td>
                             <td className="tnum">{degree.get(n.id) ?? 0}</td>
                             <td className="tv-trend">
                               {s ? <><MiniTrend points={s.points.map((p) => p.v)} color={`var(--cat-${n.category})`} /><span className="tnum tv-latest">{fmtNumber(s.latest, s.unit)}</span></> : tr != null ? <span className="tnum">{(tr * 100).toFixed(0)}%</span> : <span className="muted">–</span>}
@@ -136,7 +138,7 @@ export function TypeView() {
                   </table>
                   {list.length > shown && (
                     <button type="button" className="tv-more" onClick={() => setPages((p) => ({ ...p, [t]: (p[t] ?? 1) + 1 }))}>
-                      <ChevronDown size={13} /> {Math.min(PAGE, list.length - shown)}개 더 보기 <span className="muted">({list.length - shown}개 남음)</span>
+                      <ChevronDown size={13} /> {Math.min(PAGE, list.length - shown)}{uiText("개 더 보기 ")}<span className="muted">({list.length - shown}{uiText("개 남음)")}</span>
                     </button>
                   )}
                 </section>
@@ -145,7 +147,7 @@ export function TypeView() {
           </section>
         );
       })}
-      {total === 0 && <div className="tv-empty">조건에 맞는 자원이 없습니다. 검색어, 태그, 필터를 조정하세요.</div>}
+      {total === 0 && <div className="tv-empty">{uiText("조건에 맞는 자원이 없습니다. 검색어, 태그, 필터를 조정하세요.")}</div>}
     </div>
   );
 }

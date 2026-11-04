@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from '../../i18n';
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { ResourceNode as RNode, ResourceType, Status } from '@orrery/shared';
@@ -9,6 +10,7 @@ export type AggregateNodeData = { type: ResourceType; count: number; members: RN
 export type AggregateNodeType = Node<AggregateNodeData, 'aggregate'>;
 
 function AggregateNodeImpl({ data, selected }: NodeProps<AggregateNodeType>) {
+  useLanguage();
   const counts: Partial<Record<Status, number>> = {};
   for (const m of data.members) counts[m.status] = (counts[m.status] ?? 0) + 1;
   const category = TYPE_META[data.type].category;
@@ -17,14 +19,14 @@ function AggregateNodeImpl({ data, selected }: NodeProps<AggregateNodeType>) {
       <Handle type="target" position={Position.Left} className="rf-handle" isConnectable={false} />
       <div className="rnode-icon stack"><TypeIcon type={data.type} size={16} /></div>
       <div className="rnode-body">
-        <div className="rnode-name">{data.label}</div>
+        <div className="rnode-name">{uiText`${uiText(TYPE_META[data.type].short)} ${data.count}개`}</div>
         <div className="agg-sub">
-          <div className="agg-status" aria-label="상태 분포">
+          <div className="agg-status" aria-label={uiText("상태 분포")}>
             {(['critical', 'warning', 'healthy', 'inactive', 'unknown'] as Status[]).filter((s) => counts[s]).map((s) => (
               <span key={s} className={`agg-seg st-${s}`} style={{ flex: counts[s] }} title={`${s} ${counts[s]}`} />
             ))}
           </div>
-          {data.unlinked && <span className="agg-note">관계 없음</span>}
+          {data.unlinked && <span className="agg-note">{uiText("관계 없음")}</span>}
         </div>
       </div>
       <ChevronRight size={14} className="agg-chev" aria-hidden />

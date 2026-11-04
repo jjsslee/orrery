@@ -1,3 +1,4 @@
+import { uiText, useLanguage } from '../../i18n';
 import { memo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, Position, type EdgeProps, type Edge, type InternalNode } from '@xyflow/react';
 import type { SceneEdge } from '../../layout/scene';
@@ -18,6 +19,7 @@ function anchor(node: InternalNode, side: Side, port: number) {
 }
 
 function FlowEdgeImpl({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }: EdgeProps<FlowEdgeType>) {
+  useLanguage();
   const sourceNode = useInternalNode(source), targetNode = useInternalNode(target);
   const ports = data?.ports;
   let path: string, labelX: number, labelY: number;
@@ -57,9 +59,9 @@ function FlowEdgeImpl({ id, source, target, sourceX, sourceY, targetX, targetY, 
       {data.labeled && (
         <EdgeLabelRenderer>
           <div className="fedge-label" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
-            <span className="fedge-kind">{EDGE_KIND_LABEL[kind] ?? kind}</span>
+            <span className="fedge-kind">{uiText(EDGE_KIND_LABEL[kind] ?? kind)}</span>
             {/* Short details (ports, "3개 라우트") only: long ones would cover nearby nodes; the HoverCard and Inspector show them. */}
-            {label && label.length <= 14 && <span className="fedge-text">{label}</span>}
+            {label && label.length <= 14 && <span className="fedge-text">{uiText(label)}</span>}
             {count > 1 && <span className="fedge-count tnum">×{count}</span>}
           </div>
         </EdgeLabelRenderer>

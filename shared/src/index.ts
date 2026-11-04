@@ -3,6 +3,8 @@
  * The server builds a ResourceGraph from read-only AWS API calls;
  * the web client renders it. Everything here is serialisable JSON.
  */
+export { createTranslator, detectLanguage, intlLocale, isLanguage, normalizeMessage, translate } from './i18n';
+export type { Language } from './i18n';
 
 export type Category =
   | 'compute'

@@ -18,7 +18,9 @@
 
 ![Orrery topology view with fictional demonstration resources](docs/images/topology.png)
 
-*The current app interface, shown with fictional demo resources. The app UI is currently in Korean; documentation is available in English and Korean.*
+*The current app interface, shown with fictional demo resources. Choose English or 한국어 from the language selector in the top bar. Your choice is saved on this device.*
+
+The app, its desktop menus, and update prompts support **English and Korean**. Switching languages keeps your current view, filters, and selected resources. AWS resource names, tags, and original AWS messages remain as provided.
 
 ## From inventory to understanding
 
