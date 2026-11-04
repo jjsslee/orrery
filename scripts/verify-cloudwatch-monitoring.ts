@@ -9,9 +9,9 @@ import { attachReadOnlyGuard } from '../server/src/aws/readonly-guard.ts';
 import { MetricsRepository } from '../server/src/monitoring/metrics.ts';
 import { resourceKey } from '../server/src/monitoring/resources.ts';
 
-const PROFILE = 'gs-parnas-dev';
+const PROFILE = 'demo-profile';
 const REGION = 'ap-northeast-2';
-const FUNCTIONS = ['ninetree-cx-batch-dev', 'parnas-stt-console'];
+const FUNCTIONS = ['example-worker-a', 'example-worker-b'];
 const METRICS = [{ name: 'Invocations', stat: 'Sum' }, { name: 'Errors', stat: 'Sum' }, { name: 'Duration', stat: 'Average' }];
 const PERIOD = 60;
 const SEND_LIMIT = 2;

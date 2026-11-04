@@ -1,5 +1,7 @@
 # CloudWatch 모니터링 구현 계획
 
+> 과거 설계·검증 기록입니다. 현재 사용자 안내는 [문서 목록](README.md)에서 확인하세요. 당시 승인·예상 비용은 새 실행 권한이 아니며, 실환경 식별자는 공개 문서용 예시로 대체했습니다.
+
 작성일: 2026-10-23
 
 이 문서는 v0.2.0의 메뉴 중심 UI와 당시 구현·검증 기록이다. 현재 화면은 [자원 중심 모니터링 재구성](monitoring-resource-workspace-plan.md)으로 대체한다. 아래 기존 화면 설명과 과거 검증 결과를 새 화면의 검증 결과로 해석하지 않는다.
@@ -15,7 +17,7 @@ Orrery에 독립 `모니터링` 메뉴를 추가한다. 사용자가 관심 서�
 - 24시간 감지와 외부 통지는 기존 AWS 경보가 담당한다. Orrery의 자동 갱신은 화면이 활성화된 동안의 조회 기능이다.
 - AWS 경보 생성·수정, 에이전트 설치, 인프라 배포, 외부 알림 전송은 범위 밖이다.
 - 다중 계정·리전 통합 화면, 자체 시계열 DB, AI 원인 판정, 사용자 정의 쿼리 편집기는 첫 출시에서 제외한다.
-- 현재는 아래 단계에 따라 기능을 구현한다. 이 작업에 한해 `gs-parnas-dev`에서 누적 예상 비용 $10 이하의 자율 조회를 승인받았다. 대상·기간·요청 상한과 실행 결과를 기록하며, 승인 범위나 비용 상한을 초과하려면 새 승인을 받는다. AWS 자원 변경·커밋·푸시·배포·교차 모델 리뷰는 포함하지 않는다.
+- 현재는 아래 단계에 따라 기능을 구현한다. 이 작업에 한해 `demo-profile`에서 누적 예상 비용 $10 이하의 자율 조회를 승인받았다. 대상·기간·요청 상한과 실행 결과를 기록하며, 승인 범위나 비용 상한을 초과하려면 새 승인을 받는다. AWS 자원 변경·커밋·푸시·배포·교차 모델 리뷰는 포함하지 않는다.
 
 ## 계획 작성 당시 기반과 검증 결과
 
@@ -198,7 +200,7 @@ RED → GREEN 기록(2026-10-23, AWS 호출 없는 fixture):
 - 기간은 최대 7일이며 과거 데이터 보존 해상도를 고려한다. 기본 period는 3시간 이내 60초, 24시간 이내 300초, 이후 900초이고 EC2 basic monitoring/S3 등 서비스별 최소 period를 적용한다. 시작·끝은 실제 period 경계에 맞춘다.
 - 범위·지표·통계·해상도를 캐시 키에 포함하며 동일 진행 요청을 공유한다. 요청당 최대 10개 SDK command로 제한하고 SDK retry(maxAttempts 8)를 포함한 HTTP 시도는 최대 80회임을 구별한다. 이 제한은 AWS 비용 보장을 뜻하지 않는다.
 - AWS 공식 문서 대조: MetricDataResult의 Complete/PartialData/InternalError/Forbidden 및 NextToken 의미, 15~63일 데이터의 300초 배수/63일 이후 3600초 배수, Lambda Duration p95와 Errors/Invocations Sum, ALB TargetResponseTime Average/p95와 LoadBalancer dimension을 확인했다. ECS CPU/Memory는 ClusterName+ServiceName이며 RUNNING task가 없으면 데이터가 없을 수 있고, EC2 기본 모니터링은 5분/상세는 1분이다. RDS DBInstanceIdentifier, S3 일 단위 Average·StorageType, CloudFront us-east-1·Region=Global도 문서 대조했다. 이 결과는 서비스 문서 검증이며 실계정/콘솔 대조를 대신하지 않는다.
-- 승인 전 준비한 `scripts/verify-cloudwatch-monitoring.ts`는 기본 dry-run이며 AWS 호출을 하지 않는다. 명시 승인 후에만 `gs-parnas-dev`/`ap-northeast-2`의 Lambda 2개(`ninetree-cx-batch-dev`, `parnas-stt-console`), 최근 3시간·60초, 각 Invocations Sum/Errors Sum/Duration Average의 6개 쿼리를 앱 함수와 직접 SDK로 대조한다. harness는 같은 자격증명 스냅샷으로 무료 STS 1회로 승인 계정 일치를 확인한 뒤 재시도 0(maxAttempts 1), pagination 포함 총 CloudWatch 전송 2회 상한을 별도로 강제한다. dry-run(0호출) 및 standalone TypeScript 검사를 통과한 뒤 사용자의 총 $10 이하 승인 범위에서 제한 실계정 검증을 한 번 실행했다. 실제 전송은 무료 STS 1회와 CloudWatch 2회(각 6지표), 재시도 0회다. 2026-10-23 공식 AWS 가격 문서에서 확인한 지표 1,000개당 $0.01 기준 예상액은 약 $0.00012이며, 청구서 실측값이 아니고 세금·환율·기타 별도 요청은 포함하지 않는다.
+- 승인 전 준비한 `scripts/verify-cloudwatch-monitoring.ts`는 기본 dry-run이며 AWS 호출을 하지 않는다. 명시 승인 후에만 `demo-profile`/`ap-northeast-2`의 Lambda 2개(`example-worker-a`, `example-worker-b`), 최근 3시간·60초, 각 Invocations Sum/Errors Sum/Duration Average의 6개 쿼리를 앱 함수와 직접 SDK로 대조한다. harness는 같은 자격증명 스냅샷으로 무료 STS 1회로 승인 계정 일치를 확인한 뒤 재시도 0(maxAttempts 1), pagination 포함 총 CloudWatch 전송 2회 상한을 별도로 강제한다. dry-run(0호출) 및 standalone TypeScript 검사를 통과한 뒤 사용자의 총 $10 이하 승인 범위에서 제한 실계정 검증을 한 번 실행했다. 실제 전송은 무료 STS 1회와 CloudWatch 2회(각 6지표), 재시도 0회다. 2026-10-23 공식 AWS 가격 문서에서 확인한 지표 1,000개당 $0.01 기준 예상액은 약 $0.00012이며, 청구서 실측값이 아니고 세금·환율·기타 별도 요청은 포함하지 않는다.
 
 작업: 선택 대상 지표 API, 기간/해상도 처리, 프리셋, 공유 시간축 차트·구간 확대, 지표별 조회 결과 표시. 기존 Inspector의 기간·결측 표시 개선.
 
@@ -233,9 +235,9 @@ RED → GREEN 기록(2026-10-23, AWS 호출 없는 fixture):
 
 실계정 검증과 비용:
 
-- 사용자 승인 범위는 총 $10 이하이며 사용한 프로필은 `gs-parnas-dev`, 계정 `211125409037`, 리전 `ap-northeast-2`다. 실계정 자동 갱신은 계속 꺼 둔 상태로 명시적 조회만 실행했다.
-- SDK 대조: 2026-10-23 08:09~11:09 KST(2026-10-22T23:09Z~2026-10-23T02:09Z), 60초 집계로 Lambda 두 개의 Invocations Sum/Errors Sum/Duration Average를 조회했다. `ninetree-cx-batch-dev`는 세 지표 모두 `empty`/0점, `parnas-stt-console`은 세 지표 모두 `complete`/각 3점이며 최신 데이터는 09:36 KST(00:36Z)다. 앱 함수와 독립 SDK의 상태·점 배열·시간축·마지막 데이터 시각이 일치했다. 전송은 무료 STS 1회 + CloudWatch 2회(각 6쿼리), 재시도 0회였다.
-- 실제 웹 UI: production source 서버의 모니터링에서 Lambda 두 개를 선택했을 때 전체 graph 요청 0회, metrics POST 1회/SDK command 1회/8쿼리만 발생했다. p95와 파생 오류율, 빈 데이터·오류 0·지연된 데이터 시각 표시를 확인했다. 이어 `parnas-stt-console` 단독 조회는 4쿼리/SDK command 1회였으며 dark 1440×1500에서 실제 5개 차트·결측·같은 시각의 툴팁 5개를 확인했다.
+- 사용자 승인 범위는 총 $10 이하이며 사용한 프로필은 `demo-profile`, 계정 `000000000000`, 리전 `ap-northeast-2`다. 실계정 자동 갱신은 계속 꺼 둔 상태로 명시적 조회만 실행했다.
+- SDK 대조: 2026-10-23 08:09~11:09 KST(2026-10-22T23:09Z~2026-10-23T02:09Z), 60초 집계로 Lambda 두 개의 Invocations Sum/Errors Sum/Duration Average를 조회했다. `example-worker-a`는 세 지표 모두 `empty`/0점, `example-worker-b`은 세 지표 모두 `complete`/각 3점이며 최신 데이터는 09:36 KST(00:36Z)다. 앱 함수와 독립 SDK의 상태·점 배열·시간축·마지막 데이터 시각이 일치했다. 전송은 무료 STS 1회 + CloudWatch 2회(각 6쿼리), 재시도 0회였다.
+- 실제 웹 UI: production source 서버의 모니터링에서 Lambda 두 개를 선택했을 때 전체 graph 요청 0회, metrics POST 1회/SDK command 1회/8쿼리만 발생했다. p95와 파생 오류율, 빈 데이터·오류 0·지연된 데이터 시각 표시를 확인했다. 이어 `example-worker-b` 단독 조회는 4쿼리/SDK command 1회였으며 dark 1440×1500에서 실제 5개 차트·결측·같은 시각의 툴팁 5개를 확인했다.
 - 전체 실유료 조회는 CloudWatch 4회/지표 쿼리 합계 24개(6+6+8+4)다. 공식 단가 지표 1,000개당 $0.01 기준 예상액은 약 $0.00024이며 청구서 확정액이 아니다. 세금·환율·다른 요청은 포함하지 않는다.
 - 실계정 관심 묶음에 수동 자원 2개 저장 후 새로고침하면 설정만 복원되고 자원 미조회 범위 경고가 나타나는 것을 확인했다.
 

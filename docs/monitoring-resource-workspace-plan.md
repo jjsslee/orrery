@@ -1,5 +1,7 @@
 # 자원 중심 모니터링 재구성
 
+> 과거 설계·검증 기록입니다. 현재 사용자 안내는 [문서 목록](README.md)에서 확인하세요. 당시 승인·예상 비용은 새 실행 권한이 아니며, 실환경 식별자는 공개 문서용 예시로 대체했습니다.
+
 작성일: 2026-10-23
 상태: v0.3.0의 A/B/C 구현·로컬 통합 검증과 최종 실행파일 생성 완료. macOS ARM 실행·health·내장 자산 확인을 완료했다. v0.2.0의 메뉴 중심 화면을 대체했으며 Windows/Intel Mac 실행과 Apple 공증은 미검증이다.
 
@@ -62,7 +64,7 @@
 - 새 사용 순서와 관계 근거/조회 범위/비용/저장 범위를 README에 반영한다.
 - npm test / npm run typecheck / npm run build 및 실제 브라우저 검증. 기존 검증을 약화하지 않으며, 대체된 메뉴 계약 테스트만 새 화면 계약으로 변경한다.
 - fixture에서 이름·태그 찾기 → 기준 선택 → 선/태그 관련 후보 추가 → 같은 화면 지표·경보 → 저장/복원 흐름을 검증한다. dark/light, 좁은 폭, 긴 자원명, 키보드, overlap/overflow도 확인한다.
-- 실제 AWS 조회가 필요하면 앞서 지정한 gs-parnas-dev와 누적 예상 $10 이하 승인 범위 안에서 수량을 기록한다. AWS 자원 변경·교차 모델 리뷰는 하지 않는다.
+- 실제 AWS 조회가 필요하면 앞서 지정한 demo-profile와 누적 예상 $10 이하 승인 범위 안에서 수량을 기록한다. AWS 자원 변경·교차 모델 리뷰는 하지 않는다.
 
 
 ### C 검증 기록 — 2026-10-23
@@ -71,8 +73,8 @@
 - 목록 새로고침 회귀: 명시적 **자원 목록 새로고침** 클릭은 6유형 모두 `refresh=1`로 요청하며 유료 지표 호출은 0회임을 실제 브라우저에서 확인했다. 초기 자동 목록 조회의 기본 캐시는 유지하며 서버 route 회귀 테스트로 확인했다. 이 수정 후 `npm test` 126개와 전체 typecheck를 다시 통과했다. 최종 재빌드와 실행파일 재생성도 통과했다.
 - fixture 브라우저: 이름 검색 → 추가 → 같은 태그·선 연결 후보 추가, 최대 4개 제한, 선택 구성 저장·복원, 기간 변경, 태그 키·값 필터, 경보 상세·이력, 값 표를 확인했다. 검색·태그 필터는 추가 지표 호출을 만들지 않았다. 연결 구성이 `loading`인 동안에도 지표와 태그 후보가 먼저 나타났다. 숨김 상태의 기간 변경은 지표를 조회하지 않고 화면이 보이면 재개했으며 키보드 포커스 외곽선도 확인했다. 직접 선택한 시작·종료 입력 변경 후 300ms debounce 뒤 지표 재조회를 확인했다. 실제 API와 같은 scope 필드를 포함한 경보 상세·이력 fixture가 표시됐으며 오류는 없었다. 최종 clean reload의 browser console error와 page error는 모두 0개였다.
 - 화면: 1440px 다크와 640/360px 라이트에서 본문 가로 넘침이 없고 관련 후보 추가가 동작했다. 360px 상단 연결 컨트롤의 축소 문제를 모니터링 헤더 자식의 `flex-shrink: 0`/`white-space: nowrap`으로 수정하고 재확인했다. `다시 연결`은 폭 56.5px/높이 21.4px을 유지했다. 상단 컨트롤 영역은 clientWidth 340px/scrollWidth 458px이며 가로 스크롤 118.5px 이동을 확인했다. viewport와 document 폭은 모두 360px으로 본문 전체 넘침은 없었다.
-- 실계정 읽기 검증: `gs-parnas-dev` / `211125409037` / `ap-northeast-2` identity가 일치했다. Lambda 목록 40개를 완료했고 일부 태그 권한의 미조회 상태를 구분했다. `parnas-stt-console` 관련 조회 첫 응답은 구성 `loading`과 같은 태그 후보 2개를 즉시 반환했다. 백그라운드 수집 약 35초 후 구성 `complete`, 선 연결 후보 12개·같은 태그 후보 40개를 확인했다.
-- 제한된 유료 조회: `ninetree-cx-batch-dev`, `parnas-stt-console` 두 Lambda의 최근 3시간/60초 집계에서 `Invocations:Sum`, `Errors:Sum`, `Duration:Average`를 조회했다. 앱 POST 1회, `GetMetricData` SDK command 1회/6개 쿼리였고 결과는 모두 `empty`였다. 이 실행으로 실제 값이 있는 시계열의 렌더링을 검증했다고 주장하지 않으며 값·부분·오류·결측·단일 점은 fixture로 검증했다.
+- 실계정 읽기 검증: `demo-profile` / `000000000000` / `ap-northeast-2` identity가 일치했다. Lambda 목록 40개를 완료했고 일부 태그 권한의 미조회 상태를 구분했다. `example-worker-b` 관련 조회 첫 응답은 구성 `loading`과 같은 태그 후보 2개를 즉시 반환했다. 백그라운드 수집 약 35초 후 구성 `complete`, 선 연결 후보 12개·같은 태그 후보 40개를 확인했다.
+- 제한된 유료 조회: `example-worker-a`, `example-worker-b` 두 Lambda의 최근 3시간/60초 집계에서 `Invocations:Sum`, `Errors:Sum`, `Duration:Average`를 조회했다. 앱 POST 1회, `GetMetricData` SDK command 1회/6개 쿼리였고 결과는 모두 `empty`였다. 이 실행으로 실제 값이 있는 시계열의 렌더링을 검증했다고 주장하지 않으며 값·부분·오류·결측·단일 점은 fixture로 검증했다.
 - 최종 패키징: `node scripts/package.mjs`의 모든 타깃 생성에 성공했다. macOS/Windows zip의 `unzip -tq` 검사, Windows `PE32+ x86-64` 형식 검사, macOS `codesign --verify --deep --strict` 검사를 통과했다. 서명 확인은 Apple Developer ID 공증을 뜻하지 않는다.
 - 실행 확인: macOS ARM 실행파일을 4834 포트에서 실행해 health의 `{ok:true,readOnly:true,build:"0.3.0+20261023T074320Z"}`를 확인했다. 내장 JS `index-CxuLMD0P.js`에 새 자원 중심 화면·태그 조건 추가·선 연결·자동 조회 안내가 포함됐음을 확인했다. Windows/Intel Mac 실제 실행, Apple 공증, AWS 콘솔 UI 대조는 미검증이다.
 - AWS 자원 변경은 수행하지 않았다. 커밋·푸시·GitHub Release는 root 작업에서 진행하며 이 기록은 게시 완료를 뜻하지 않는다.

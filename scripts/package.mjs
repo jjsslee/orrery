@@ -163,6 +163,7 @@ for (const t of targets) {
   });
   if (t.platform === 'darwin') {
     const app = join(dir, 'Orrery.app');
+    writeFileSync(join(app, 'Contents', 'Resources', 'orrery-update.json'), `${JSON.stringify({ format: 1, version, platform: t.platform, arch: t.arch })}\n`);
     execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: ['ignore', 'ignore', 'pipe'] });
     zip(app, join(out, t.zip));
     // The app for this Mac's chip stays next to the zips to open right away.
@@ -173,6 +174,7 @@ for (const t of targets) {
       console.log(`  ${relative(root, local)}`);
     }
   } else {
+    writeFileSync(join(dir, 'resources', 'orrery-update.json'), `${JSON.stringify({ format: 1, version, platform: t.platform, arch: t.arch })}\n`);
     // Unzipped, the folder reads Orrery\Orrery.exe rather than Orrery-win32-x64.
     const folder = join(work, 'Orrery');
     rmSync(folder, { recursive: true, force: true });

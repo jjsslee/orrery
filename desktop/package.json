@@ -6,5 +6,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/yauzl": "^2.10.3"
   }
 }

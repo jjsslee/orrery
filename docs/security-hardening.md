@@ -1,5 +1,7 @@
 # 로컬 보안 보완 — 2026-10-27
 
+> 과거 설계·검증 기록입니다. 현재 사용자 안내는 [문서 목록](README.md)에서 확인하세요. 당시 승인·예상 비용은 새 실행 권한이 아니며, 실환경 식별자는 공개 문서용 예시로 대체했습니다.
+
 소스 변경 및 로컬 실행 파일 생성 기록이다. 설치된 앱 교체·외부 배포·GitHub Release 게시는 하지 않았다.
 
 ## 보완 범위
@@ -14,7 +16,7 @@
 ## 검증
 
 - 변경 전 캐시 권한·민감한 Get 명령 허용 테스트 실패를 확인한 뒤 수정했다. 추가로 bootstrap 인증 실패가 화면에 표시되지 않는 문제도 실패 테스트 후 수정했다.
-- 전체 테스트, shared/server/web/desktop typecheck, 웹 build, Electron main/server CJS 번들 생성 및 diff 검사를 수행했다. 테스트 수는 README의 보안 보완 검증 기록을 참고한다.
+- 전체 테스트, shared/server/web/desktop typecheck, 웹 build, Electron main/server CJS 번들 생성 및 diff 검사를 수행했다. 테스트 수는 [과거 검증 기록](verification-history.ko.md)을 참고한다.
 - 실제 로컬 HTTP 서버와 Vite 프록시에서 무인증 401, 정상 인증 200, 공개 화면의 토큰 미포함, CSP, `/@fs/`를 통한 토큰·안내 파일 접근 차단을 확인했다.
 - 새 브라우저 context의 모의 API로 개발/빌드 화면 각각에서 토폴로지 Worker, SSE 진행/완료, SSO 시작·완료 후 재연결, 모니터링 자원 선택·지표 요청, 로컬 폰트를 확인했다. 콘솔 오류와 외부 리소스 요청은 0건이었다.
 - 임시 홈·빈 AWS 설정으로 격리한 패키지 서버 번들에서 인증 없는 종료 거부, 인증 성공, 기존 서버 교체, 토큰 교체, 0600 권한과 인증된 종료를 확인했다. Electron utility process 자체는 모의 parentPort로 대체했다.
