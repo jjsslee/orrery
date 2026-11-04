@@ -8,6 +8,37 @@ import type { CollectEvent, MetricsBundle, ResourceGraph } from '@orrery/shared'
 function deferred<T>() { let resolve!: (v: T) => void; let reject!: (e: Error) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 const graph = (account: string): ResourceGraph => ({ account, source: 'test', region: 'r', collectedAt: '', nodes: [], edges: [], reports: [] });
 const metrics = (label: string): MetricsBundle => ({ region: label, collectedAt: '', series: {}, traffic: {} });
+
+test('resource type controls and layer state stay in sync', () => {
+  const store = useStore.getState();
+  store.setAllTypes(false);
+  store.toggleType('security-group');
+  assert.equal(useStore.getState().overlays.security, true);
+  assert.equal(useStore.getState().hiddenTypes.has('security-group'), false);
+  store.setOverlay('security', false);
+  assert.equal(useStore.getState().hiddenTypes.has('security-group'), true);
+  store.onlyType('kms-key');
+  assert.equal(useStore.getState().overlays.encryption, true);
+  assert.equal(useStore.getState().overlays.security, false);
+  store.toggleCategory('security');
+  assert.equal(useStore.getState().overlays.encryption, false);
+  store.setAllTypes(true);
+  assert.equal(useStore.getState().overlays.targetGroups, true);
+  assert.equal(useStore.getState().overlays.iam, true);
+  store.setAllTypes(false);
+  store.resetFilters();
+  assert.equal(useStore.getState().hiddenTypes.size, 0);
+  assert.equal(useStore.getState().overlays.security, true);
+});
+
+test('status filtering clears selection and resets with the other filters', () => {
+  useStore.setState({ selectedId: 'previous-selection' });
+  useStore.getState().setStatusFilter('critical');
+  assert.equal(useStore.getState().statusFilter, 'critical');
+  assert.equal(useStore.getState().selectedId, undefined);
+  useStore.getState().resetFilters();
+  assert.equal(useStore.getState().statusFilter, undefined);
+});
 function reset() { useStore.setState({ profile: 'A', region: 'r', graph: graph('new'), metrics: undefined, metricsLoading: false, liveBusy: false, loading: { active: false, reports: {}, order: [] } }); }
 
 test('tag selection toggles values and whole keys without removing other filters', () => {

@@ -9,13 +9,14 @@ import { TagPanel } from './TagPanel';
 import { tagFilterLabel } from '../model/tags';
 import { Checkbox } from '../components/Checkbox';
 
-export function Rail() {
+export function Rail({ onClose }: { onClose?: () => void }) {
   const graph = useStore((s) => s.graph);
   const query = useStore((s) => s.query);
+  const statusFilter = useStore((s) => s.statusFilter);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
   const railTab = useStore((s) => s.railTab);
   const tagFilters = useStore((s) => s.tagFilters);
-  const { setQuery, toggleCategory, toggleType, setRailTab, removeTagFilter, setAllTypes, onlyType, resetFilters } = useStore.getState();
+  const { setQuery, toggleCategory, toggleType, setRailTab, removeTagFilter, setAllTypes, onlyType, resetFilters, setStatusFilter } = useStore.getState();
   const filtered = hiddenTypes.size > 0;
 
   const counts = useMemo(() => {
@@ -31,7 +32,8 @@ export function Rail() {
   }, [graph]);
 
   return (
-    <aside className="rail" aria-label="자원 필터">
+    <aside id="resource-filters" className="rail" aria-label="자원 필터">
+      <div className="rail-mobile-head"><strong>검색·필터</strong><button type="button" className="icon-btn" onClick={onClose} aria-label="필터 닫기"><X size={18} /></button></div>
       <label className="search">
         <Search size={14} aria-hidden />
         <input
@@ -65,18 +67,20 @@ export function Rail() {
 
       {graph && railTab === 'tags' && <TagPanel />}
 
-      {graph && railTab === 'types' && (
-        <section className="rail-status" aria-label="상태 요약">
+      {graph && (
+        <section className="rail-status" aria-label="상태 필터">
+          <div className="rail-section-head"><span>상태</span>{statusFilter && <button type="button" className="link-btn" onClick={() => setStatusFilter(undefined)}>상태 전체 보기</button>}</div>
           <div className="status-bar" role="img" aria-label={STATUS_ORDER.map((s) => `${STATUS_LABEL[s]} ${counts.byStatus[s]}`).join(', ')}>
             {STATUS_ORDER.filter((s) => counts.byStatus[s] > 0).map((s) => (
               <span key={s} className={`status-seg st-${s}`} style={{ flex: counts.byStatus[s] }} />
             ))}
           </div>
           <ul className="status-legend">
-            {STATUS_ORDER.filter((s) => counts.byStatus[s] > 0).map((s) => (
-              <li key={s} className={`st-${s}`}><span className="status-dot" />{STATUS_LABEL[s]} <b className="tnum">{counts.byStatus[s]}</b></li>
+            {STATUS_ORDER.filter((s) => counts.byStatus[s] > 0 || statusFilter === s).map((s) => (
+              <li key={s} className={`st-${s}`}><button type="button" aria-pressed={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? undefined : s)}><span className="status-dot" aria-hidden />{STATUS_LABEL[s]} <b className="tnum">{counts.byStatus[s]}</b></button></li>
             ))}
           </ul>
+          {statusFilter && <p className="rail-filter-note" role="status">{STATUS_LABEL[statusFilter]} 자원만 표시 · 지도에는 소속 영역도 남습니다.</p>}
         </section>
       )}
 
@@ -94,7 +98,7 @@ export function Rail() {
                 <span className="rail-cat-name">전체</span>
                 <span className="rail-count tnum">{visibleCount}/{presentTypes.length}</span>
               </label>
-              {(filtered || query || tagFilters.length > 0) && <button type="button" className="link-btn" onClick={resetFilters}>초기화</button>}
+              {(filtered || query || tagFilters.length > 0 || statusFilter) && <button type="button" className="link-btn" onClick={resetFilters}>초기화</button>}
             </div>
             <div className="rail-hint">
               <p>체크한 유형만 지도에 남고, 3종 이하로 좁히면 모두 펼칩니다. <kbd>{/Mac/i.test(navigator.platform) ? '⌥' : 'Alt'}</kbd>+클릭은 그 유형만 봅니다.</p>
@@ -118,11 +122,10 @@ export function Rail() {
                       const meta = TYPE_META[t];
                       return (
                         <li key={t}>
-                          <label className={`rail-type ${hidden ? 'off' : ''}`} title={meta.overlay ? '토폴로지에서는 하단 레이어도 켜야 보입니다' : undefined}>
+                          <label className={`rail-type ${hidden ? 'off' : ''}`} >
                             <Checkbox checked={!hidden} label={meta.label} onChange={(_next, alt) => (alt ? onlyType(t) : toggleType(t))} />
                             <TypeIcon type={t} size={14} />
                             <span className="rail-type-name">{meta.label}</span>
-                            {meta.overlay && <span className="rail-layer">레이어</span>}
                             <span className="rail-count tnum">{counts.byType.get(t)}</span>
                           </label>
                         </li>
@@ -138,7 +141,7 @@ export function Rail() {
 
       {graph && (
         <footer className="rail-foot">
-          <div>총 {counts.total.toLocaleString()}개 자원 · {graph.edges.length.toLocaleString()}개 관계</div>
+          <div>수집 전체 {counts.total.toLocaleString()}개 자원 · {graph.edges.length.toLocaleString()}개 관계</div>
           {graph.reports.filter((r) => !r.ok || r.error).length > 0 && (
             <details className="rail-warn">
               <summary>수집 누락·주의 {graph.reports.filter((r) => !r.ok || r.error).length}건</summary>

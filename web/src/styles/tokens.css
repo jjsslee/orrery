@@ -48,7 +48,7 @@
 
   /* Type scale. 11.5px is the floor for any text; reading text sits at 13.5px. */
   --fs-meta: 11.5px;
-  --fs-small: 12.5px;
+  --fs-small: 13px;
   --fs-body: 13.5px;
   --fs-title: 15px;
   --fs-heading: 18px;
@@ -63,7 +63,7 @@
 
   --rail-w: 272px;
   --inspector-w: 360px;
-  --topbar-h: 56px;
+  --topbar-h: 98px;
 
   --shadow-pop: 0 12px 32px rgba(3, 7, 16, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);

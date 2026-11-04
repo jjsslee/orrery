@@ -20,8 +20,8 @@ function ResourceNodeImpl({ data, selected }: NodeProps<ResourceNodeType>) {
       <div className="rnode-icon"><TypeIcon type={node.type} size={16} /></div>
       <div className="rnode-body">
         {/* Full name and key properties remain available in the HoverCard and Inspector. */}
-        <div className="rnode-heading">{meta.label}</div>
-        <div className="rnode-resource-name">{node.name}</div>
+        <div className="rnode-heading" title={node.name}>{node.name}</div>
+        <div className="rnode-type">{meta.label}</div>
       </div>
       <div className="rnode-status">
         {data.ghost && <span className="rnode-ghost-tag">숨김</span>}

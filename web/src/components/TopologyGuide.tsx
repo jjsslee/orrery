@@ -7,7 +7,7 @@ import { StatusDot } from './StatusDot';
 export function TopologyGuide() {
   const dialog = useRef<HTMLDialogElement>(null);
   return <>
-    <button type="button" className="btn" onClick={() => dialog.current?.showModal()} aria-haspopup="dialog"><BookOpen size={14} aria-hidden /><span>도식 가이드</span></button>
+    <button type="button" className="btn" aria-label="도식 가이드" onClick={() => dialog.current?.showModal()} aria-haspopup="dialog"><BookOpen size={14} aria-hidden /><span>도식 가이드</span></button>
     <dialog ref={dialog} className="topology-guide" aria-labelledby="topology-guide-title" onKeyDown={(event) => event.stopPropagation()} onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
       <div className="guide-content">
         <header className="guide-header"><div><h2 id="topology-guide-title">도식 가이드</h2><p>자원과 연결 관계를 읽는 방법</p></div><button type="button" className="icon-btn" autoFocus aria-label="도식 가이드 닫기" onClick={() => dialog.current?.close()}><X size={18} /></button></header>

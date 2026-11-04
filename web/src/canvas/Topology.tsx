@@ -35,6 +35,7 @@ function TopologyInner() {
   const categories = useStore((s) => s.categories);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
   const query = useStore((s) => s.query);
+  const statusFilter = useStore((s) => s.statusFilter);
   const tagFilters = useStore((s) => s.tagFilters);
   const tagNeighbors = useStore((s) => s.tagNeighbors);
   const expanded = useStore((s) => s.expanded);
@@ -53,16 +54,16 @@ function TopologyInner() {
   const narrow = useMemo(() => {
     if (!graph || hiddenTypes.size === 0) return undefined;
     const present = new Set(graph.nodes.map((n) => n.type));
-    const visible = (Object.keys(TYPE_META) as ResourceType[]).filter((t) => present.has(t) && !hiddenTypes.has(t) && !TYPE_META[t].plate && !TYPE_META[t].overlay);
+    const visible = (Object.keys(TYPE_META) as ResourceType[]).filter((t) => present.has(t) && !hiddenTypes.has(t) && !TYPE_META[t].plate);
     return visible.length > 0 && visible.length <= 3 ? new Set(visible) : undefined;
   }, [graph, hiddenTypes]);
 
   const scene: Scene | undefined = useMemo(
     () => (graph ? buildScene({
-      graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic,
+      graph, overlays, categories, hiddenTypes, query, statusFilter, tagFilters, tagNeighbors, expanded, selectedId, traffic: metrics?.traffic,
       pruneEmptyPlates: Boolean(narrow), noFoldTypes: narrow,
     }) : undefined),
-    [graph, overlays, categories, hiddenTypes, query, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic, narrow],
+    [graph, overlays, categories, hiddenTypes, query, statusFilter, tagFilters, tagNeighbors, expanded, selectedId, metrics?.traffic, narrow],
   );
 
   // Re-layout only when the structure changes, not on dim/traffic updates.
@@ -73,7 +74,7 @@ function TopologyInner() {
   const firstFit = useRef(true);
   // Filters and search change what is on the map: fit the view once the new layout lands.
   const fitAfterLayout = useRef(false);
-  useEffect(() => { fitAfterLayout.current = true; }, [query, tagFilters, tagNeighbors, categories, hiddenTypes, overlays.security, overlays.iam, overlays.encryption, overlays.targetGroups, overlays.isolated]);
+  useEffect(() => { fitAfterLayout.current = true; }, [query, statusFilter, tagFilters, tagNeighbors, categories, hiddenTypes, overlays.security, overlays.iam, overlays.encryption, overlays.targetGroups, overlays.isolated]);
 
   useEffect(() => {
     if (!scene || !structureKey) return;
@@ -260,12 +261,13 @@ function TopologyInner() {
       {scene && scene.nodes.length === 0 && (
         <div className="empty">
           <div className="empty-card">
-            <div className="empty-title">{query ? `'${query}'에 맞는 자원이 없습니다` : tagFilters.length ? '선택한 태그를 가진 자원이 없습니다' : '표시할 자원이 없습니다'}</div>
+            <div className="empty-title">{query ? `'${query}'에 맞는 자원이 없습니다` : statusFilter ? '선택한 상태에 맞는 자원이 없습니다' : tagFilters.length ? '선택한 태그를 가진 자원이 없습니다' : '표시할 자원이 없습니다'}</div>
             <div className="empty-sub">
               {scene.hiddenMatches > 0
-                ? `꺼진 레이어나 필터에 숨겨진 자원 ${scene.hiddenMatches}개가 검색어와 일치합니다. 하단 레이어나 왼쪽 필터를 켜 보세요.`
-                : '검색어를 바꾸거나 왼쪽 필터를 조정하세요.'}
+                ? '다른 필터로 가려진 자원이 있습니다. 유형·상태·태그 필터를 조정하세요.'
+                : '검색어를 바꾸거나 유형·상태·태그 필터를 조정하세요.'}
             </div>
+            <button type="button" className="btn" onClick={() => useStore.getState().resetFilters()}>필터 초기화</button>
           </div>
         </div>
       )}

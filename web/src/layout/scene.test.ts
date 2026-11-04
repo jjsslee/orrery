@@ -6,6 +6,23 @@ const node = (type: ResourceNode['type'], name: string, extra: Partial<ResourceN
 function scene(nodes: ResourceNode[], edges: ResourceEdge[] = [], extra: Partial<SceneInput> = {}) {
   return buildScene({ graph: { nodes, edges, reports: [], account: '000000000000', region: 'ap-northeast-2', source: 'test', collectedAt: '' }, overlays: { security: true, iam: true, encryption: true, targetGroups: true, isolated: true, traffic: true }, categories: { compute: true, network: true, database: true, storage: true, integration: true, security: true }, hiddenTypes: new Set(), expanded: new Set(), query: '', ...extra });
 }
+test('status filter preserves ancestors, unfolds matches and excludes other resources', () => {
+  const nodes = [node('vpc', 'one'), ...Array.from({ length: 8 }, (_, i) => node('ec2-instance', `critical-${i}`, { parentId: 'vpc:one', status: 'critical' })), node('ec2-instance', 'healthy', { parentId: 'vpc:one' })];
+  const s = scene(nodes, [], { statusFilter: 'critical' });
+  assert.equal(s.nodes.filter(n => n.kind === 'resource').length, 8);
+  assert.ok(s.nodes.some(n => n.id === 'vpc:one'));
+  assert.ok(!s.nodes.some(n => n.id === 'ec2-instance:healthy'));
+  assert.equal(scene(nodes, [], { statusFilter: 'warning' }).visible, 0);
+});
+
+test('status filter intersects search and tags', () => {
+  const s = scene([
+    node('lambda', 'prod-critical', { status: 'critical', tags: { Env: 'prod' } }),
+    node('lambda', 'prod-healthy', { tags: { Env: 'prod' } }),
+    node('lambda', 'dev-critical', { status: 'critical', tags: { Env: 'dev' } }),
+  ], [], { statusFilter: 'critical', query: 'prod', tagFilters: [{ key: 'Env', value: 'prod' }] });
+  assert.deepEqual(s.nodes.filter(n => n.kind === 'resource').map(n => n.id), ['lambda:prod-critical']);
+});
 test('hiding VPC preserves the visible child containment', () => {
   const s = scene([node('vpc', 'one'), node('lambda', 'fn', { parentId: 'vpc:one' })], [], { hiddenTypes: new Set(['vpc']) });
   assert.equal(s.nodes.find(n => n.id === 'lambda:fn')?.parentId, 'vpc:one');

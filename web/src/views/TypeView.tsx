@@ -22,6 +22,7 @@ export function TypeView() {
   const graph = useStore((s) => s.graph);
   const metrics = useStore((s) => s.metrics);
   const query = useStore((s) => s.query);
+  const statusFilter = useStore((s) => s.statusFilter);
   const categories = useStore((s) => s.categories);
   const hiddenTypes = useStore((s) => s.hiddenTypes);
   const tagFilters = useStore((s) => s.tagFilters);
@@ -42,6 +43,7 @@ export function TypeView() {
     const byType = new Map<ResourceType, ResourceNode[]>();
     for (const n of graph?.nodes ?? []) {
       if (!categories[n.category] || hiddenTypes.has(n.type)) continue;
+      if (statusFilter && n.status !== statusFilter) continue;
       if (!matchesTags(n, tagFilters)) continue;
       if (q && !(n.name.toLowerCase().includes(q) || n.nativeId.toLowerCase().includes(q) || Object.values(n.props).some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))) continue;
       byType.set(n.type, [...(byType.get(n.type) ?? []), n]);
@@ -55,7 +57,7 @@ export function TypeView() {
       });
     }
     return byType;
-  }, [graph, categories, hiddenTypes, tagFilters, q, sortBy, metrics]);
+  }, [graph, categories, hiddenTypes, tagFilters, q, sortBy, metrics, statusFilter]);
 
   if (!graph) return null;
   const total = [...groups.values()].reduce((a, l) => a + l.length, 0);
@@ -73,7 +75,7 @@ export function TypeView() {
         <div className="tv-sort" role="group" aria-label="정렬">
           {(['status', 'traffic', 'name'] as const).map((k) => (
             <button key={k} type="button" className={`seg ${sortBy === k ? 'on' : ''}`} aria-pressed={sortBy === k} onClick={() => setSortBy(k)}>
-              {k === 'status' ? '상태순' : k === 'traffic' ? '트래픽순' : '이름순'}
+              {k === 'status' ? '상태순' : k === 'traffic' ? '활동량순' : '이름순'}
             </button>
           ))}
         </div>

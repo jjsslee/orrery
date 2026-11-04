@@ -5,10 +5,6 @@ import type { Scene } from '../layout/scene';
 
 const LAYERS: Array<{ key: keyof Overlays; label: string; hint: string }> = [
   { key: 'traffic', label: '자원 활동', hint: 'CloudWatch 상대 활동량입니다. 관계선의 실제 트래픽을 의미하지 않습니다' },
-  { key: 'targetGroups', label: '타깃 그룹', hint: '로드 밸런서와 타깃 사이의 타깃 그룹을 노드로 펼칩니다' },
-  { key: 'security', label: '보안 그룹', hint: '보안 그룹 노드와 허용 규칙을 표시합니다' },
-  { key: 'iam', label: 'IAM 역할', hint: '컴퓨트 자원이 맡는 IAM 역할을 표시합니다' },
-  { key: 'encryption', label: 'KMS 키', hint: '암호화에 쓰이는 KMS 키를 표시합니다' },
   { key: 'isolated', label: '관계 없는 자원', hint: '다른 자원과 연결되지 않은 리전 서비스도 개별 노드로 펼칩니다' },
 ];
 
@@ -27,7 +23,7 @@ export function CanvasToolbar({ scene, laying }: { scene?: Scene; laying: boolea
         <button type="button" className="tb-btn" onClick={() => rf.fitView({ padding: 0.08, duration: 500 })} aria-label="전체 보기"><Maximize2 size={14} /></button>
       </div>
       <div className="tb-sep" />
-      <div className="tb-group tb-layers" aria-label="레이어">
+      <div className="tb-group tb-layers" aria-label="활동·묶음 표시">
         {LAYERS.map((l) => (
           <button
             key={l.key}

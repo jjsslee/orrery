@@ -55,6 +55,7 @@ export interface SceneInput {
   categories: Record<Category, boolean>;
   hiddenTypes: Set<ResourceType>;
   query: string;
+  statusFilter?: Status;
   tagFilters?: TagFilter[];
   tagNeighbors?: boolean;
   /** Drop VPC/subnet plates that end up empty (used while isolating one type) */
@@ -66,7 +67,7 @@ export interface SceneInput {
   traffic?: Record<string, number>;
 }
 
-// Room for the resource type heading (up to two lines) and its secondary name.
+// Room for a two-line resource name and its secondary type label.
 export const NODE_W = 228;
 export const NODE_H = 66;
 export const AGG_H = 50;
@@ -170,7 +171,8 @@ export function buildScene(input: SceneInput): Scene {
   const tagFilters = input.tagFilters ?? [];
   if (tagFilters.length) narrow((n) => matchesTags(n, tagFilters), Boolean(input.tagNeighbors));
   if (q) narrow((n) => matches(n, q), true);
-  if (tagFilters.length && q) for (const id of [...matched]) if (!visible.has(id)) matched.delete(id);
+  if (input.statusFilter) narrow((n) => n.status === input.statusFilter, false);
+  for (const id of [...matched]) if (!visible.has(id)) matched.delete(id);
 
   // 2b. the selected node is always on the map, and its hidden neighbours appear as ghosts
   const ghosts = new Set<string>();

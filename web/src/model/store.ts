@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { MonitoringScope, Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType } from '@orrery/shared';
+import type { MonitoringScope, Category, CollectorReport, MetricsBundle, ProfileInfo, ResourceGraph, ResourceNode, ResourceType, Status } from '@orrery/shared';
 import { api } from '../api/client';
 import { useMonitoring } from './monitoring';
 import { sameTagFilter, type TagFilter } from './tags';
@@ -58,6 +58,7 @@ export interface AppState {
   selectedId?: string;
   hoverId?: string;
   query: string;
+  statusFilter?: Status;
   categories: Record<Category, boolean>;
   hiddenTypes: Set<ResourceType>;
   overlays: Overlays;
@@ -94,6 +95,7 @@ export interface AppState {
   locate(id: string): void;
   hover(id?: string): void;
   setQuery(q: string): void;
+  setStatusFilter(status?: Status): void;
   toggleCategory(c: Category): void;
   toggleType(t: ResourceType): void;
   setOverlay<K extends keyof Overlays>(k: K, v: boolean): void;
@@ -150,6 +152,13 @@ function matchesCurrentScope(scope: MonitoringScope | undefined): boolean {
 }
 
 const ALL_TYPES = Object.keys(TYPE_META) as ResourceType[];
+// Resource checkboxes are the sole visibility control, including optional layers.
+const OPTIONAL_TYPES = ALL_TYPES.filter((t) => TYPE_META[t].overlay);
+function typeVisibility(hiddenTypes: Set<ResourceType>, overlays: Overlays) {
+  const next = { ...overlays };
+  for (const t of OPTIONAL_TYPES) next[TYPE_META[t].overlay!] = !hiddenTypes.has(t);
+  return { hiddenTypes, overlays: next };
+}
 const ALL_ON: Record<Category, boolean> = { compute: true, network: true, database: true, storage: true, security: true, integration: true };
 
 export const useStore = create<AppState>((set, get) => ({
@@ -167,7 +176,7 @@ export const useStore = create<AppState>((set, get) => ({
   view: loadPrefs().view === 'monitoring' ? 'monitoring' : 'topology',
   query: '',
   categories: { compute: true, network: true, database: true, storage: true, security: true, integration: true },
-  hiddenTypes: new Set(),
+  hiddenTypes: new Set(OPTIONAL_TYPES),
   overlays: { security: false, iam: false, encryption: false, targetGroups: false, isolated: false, traffic: true },
   expanded: new Set(),
   fitRequest: 0,
@@ -365,20 +374,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
   hover: (hoverId) => set({ hoverId }),
   setQuery: (query) => set({ query }),
+  setStatusFilter: (statusFilter) => set({ statusFilter, selectedId: undefined }),
   // A category checkbox is the union of its types: any visible → hide all, none visible → show all.
   toggleCategory: (c) => set((s) => {
     const types = ALL_TYPES.filter((t) => TYPE_META[t].category === c);
     const anyVisible = types.some((t) => !s.hiddenTypes.has(t));
     const next = new Set(s.hiddenTypes);
     for (const t of types) anyVisible ? next.add(t) : next.delete(t);
-    return { hiddenTypes: next, categories: ALL_ON };
+    return { ...typeVisibility(next, s.overlays), categories: ALL_ON };
   }),
-  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { hiddenTypes: next, categories: ALL_ON }; }),
+  toggleType: (t) => set((s) => { const next = new Set(s.hiddenTypes); next.has(t) ? next.delete(t) : next.add(t); return { ...typeVisibility(next, s.overlays), categories: ALL_ON }; }),
   // Unchecking everything keeps the VPC/subnet plates so whatever gets checked next still has its place.
-  setAllTypes: (visible) => set({ hiddenTypes: visible ? new Set() : new Set(ALL_TYPES.filter((t) => t !== 'vpc' && t !== 'subnet')), categories: ALL_ON }),
-  onlyType: (t) => set({ hiddenTypes: new Set(ALL_TYPES.filter((x) => x !== t && x !== 'vpc' && x !== 'subnet')), categories: ALL_ON }),
-  resetFilters: () => set({ hiddenTypes: new Set(), categories: ALL_ON, query: '', tagFilters: [] }),
-  setOverlay: (k, v) => set((s) => ({ overlays: { ...s.overlays, [k]: v } })),
+  setAllTypes: (visible) => set((s) => ({ ...typeVisibility(visible ? new Set() : new Set(ALL_TYPES.filter((t) => t !== 'vpc' && t !== 'subnet')), s.overlays), categories: ALL_ON })),
+  onlyType: (t) => set((s) => ({ ...typeVisibility(new Set(ALL_TYPES.filter((x) => x !== t && x !== 'vpc' && x !== 'subnet')), s.overlays), categories: ALL_ON })),
+  resetFilters: () => set((s) => ({ ...typeVisibility(new Set(), s.overlays), categories: ALL_ON, query: '', tagFilters: [], statusFilter: undefined, selectedId: undefined })),
+  setOverlay: (k, v) => set((s) => {
+    const hiddenTypes = new Set(s.hiddenTypes);
+    for (const t of OPTIONAL_TYPES) if (TYPE_META[t].overlay === k) { if (v) hiddenTypes.delete(t); else hiddenTypes.add(t); }
+    return { hiddenTypes, overlays: { ...s.overlays, [k]: v } };
+  }),
   toggleExpanded: (id) => set((s) => { const next = new Set(s.expanded); next.has(id) ? next.delete(id) : next.add(id); return { expanded: next }; }),
   setTheme: (theme) => { document.documentElement.dataset.theme = theme; savePrefs({ theme }); set({ theme }); },
   requestFit: () => set((s) => ({ fitRequest: s.fitRequest + 1 })),

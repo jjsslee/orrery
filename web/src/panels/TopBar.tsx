@@ -1,6 +1,6 @@
 import { TopologyGuide } from '../components/TopologyGuide';
 import { SsoLogin } from './SsoLogin';
-import { Activity, Eye, Moon, Radio, RotateCw, Sun } from 'lucide-react';
+import { Activity, Eye, Moon, Radio, RotateCw, Sun, SlidersHorizontal } from 'lucide-react';
 import { useStore } from '../model/store';
 import { Dropdown } from '../components/Dropdown';
 import { BrandMark } from '../components/Brand';
@@ -8,7 +8,7 @@ import { fmtRelative, maskAccount } from '../components/format';
 
 const METHOD_LABEL: Record<string, string> = { static: '액세스 키', 'static (session)': '세션 키', sso: 'SSO', 'assume-role': '역할 전환', process: '외부 프로세스', 'web-identity': '웹 자격', unknown: '설정 없음' };
 
-export function TopBar() {
+export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?: boolean; onToggleFilters?: () => void }) {
   const profiles = useStore((s) => s.profiles);
   const profile = useStore((s) => s.profile);
   const region = useStore((s) => s.region);
@@ -27,23 +27,32 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <BrandMark size={22} spinning={loading.active} />
-        <span className="brand-name">Orrery</span>
-        <span className="brand-tag">AWS 자원 관계 지도</span>
-      </div>
+      <div className="topbar-main">
+        <div className="brand">
+          <BrandMark size={22} spinning={loading.active} />
+          <span className="brand-name">Orrery</span>
+          <span className="brand-tag">AWS 자원 관계 지도</span>
+        </div>
 
-      <div className="topbar-center" role="tablist" aria-label="보기">
-        <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>토폴로지</button>
-        <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>유형별</button>
-        <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>모니터링</button>
-        <button type="button" role="tab" aria-selected={view === 'cleanup'} className={`seg ${view === 'cleanup' ? 'on' : ''}`} onClick={() => setView('cleanup')}>정리 후보</button>
-      </div>
+        <div className="topbar-center" role="tablist" aria-label="보기">
+          <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>토폴로지</button>
+          <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>유형별</button>
+          <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>모니터링</button>
+          <button type="button" role="tab" aria-selected={view === 'cleanup'} className={`seg ${view === 'cleanup' ? 'on' : ''}`} onClick={() => setView('cleanup')}>정리 후보</button>
+        </div>
 
-      <div className="topbar-spacer" />
+        <div className="topbar-spacer" />
 
-      <div className="topbar-right">
+        {view !== 'monitoring' && view !== 'cleanup' && <button type="button" className="btn filter-toggle" aria-label="검색·필터" aria-expanded={filtersOpen} aria-controls="resource-filters" onClick={onToggleFilters}><SlidersHorizontal size={15} aria-hidden /><span>필터</span></button>}
         <TopologyGuide />
+        <span className="readonly" title="서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다">
+          <Eye size={13} aria-hidden /><span className="readonly-text">읽기 전용</span>
+        </span>
+        <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? '라이트 테마로' : '다크 테마로'}>
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
+      </div>
+      <div className="topbar-right" role="group" aria-label="연결·조회 도구">
         <div className="conn" role="group" aria-label="AWS 연결">
           <Dropdown
             label="AWS 프로필"
@@ -69,6 +78,7 @@ export function TopBar() {
           </div>
           <SsoLogin />
         </div>
+        <div className="topbar-spacer" />
         {view !== 'monitoring' && view !== 'cleanup' && <>
         <span className="topbar-sep" aria-hidden />
         <button
@@ -92,13 +102,7 @@ export function TopBar() {
           <span>{graph ? `다시 수집 · ${fmtRelative(graph.collectedAt)}` : '수집'}</span>
         </button>
         </>}
-        <span className="topbar-sep" aria-hidden />
-        <span className="readonly" title="서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다">
-          <Eye size={13} aria-hidden /><span className="readonly-text">읽기 전용</span>
-        </span>
-        <button type="button" className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? '라이트 테마로' : '다크 테마로'}>
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
+
       </div>
     </header>
   );
