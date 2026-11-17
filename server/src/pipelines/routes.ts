@@ -25,10 +25,10 @@ export function registerPipelineRoutes(app: FastifyInstance, session: (query: Re
     let pages = 0;
     do {
       const result = await client.send(new ListActionExecutionsCommand({ pipelineName: q.name, filter: { pipelineExecutionId: q.execution }, maxResults: 100, nextToken }));
-      for (const a of result.actionExecutionDetails ?? []) actions.push({ id: a.actionExecutionId, stage: a.stageName ?? '', name: a.actionName ?? '', status: a.status ?? 'Unknown', startedAt: a.startTime?.toISOString(), updatedAt: a.lastUpdateTime?.toISOString(), error: a.output?.executionResult?.errorDetails?.message });
+      for (const a of result.actionExecutionDetails ?? []) actions.push({ id: a.actionExecutionId, stage: a.stageName ?? '', name: a.actionName ?? '', status: a.status ?? 'Unknown', startedAt: a.startTime?.toISOString(), updatedAt: a.lastUpdateTime?.toISOString(), category: a.input?.actionTypeId?.category, error: a.output?.executionResult?.errorDetails?.message });
       nextToken = result.nextToken;
       if (++pages >= 20 && nextToken) throw new Error('Action history exceeds 20 pages');
     } while (nextToken);
-    return { status: execution.pipelineExecution?.status ?? 'Unknown', stages: (definition.pipeline?.stages ?? []).map(s => s.name!), actions, checkedAt: new Date().toISOString() } satisfies PipelineDetail;
+    return { status: execution.pipelineExecution?.status ?? 'Unknown', stages: (definition.pipeline?.stages ?? []).map(s => s.name!), stageActions: Object.fromEntries((definition.pipeline?.stages ?? []).map(s => [s.name!, (s.actions ?? []).map(a => a.name!)])), actions, checkedAt: new Date().toISOString() } satisfies PipelineDetail;
   });
 }

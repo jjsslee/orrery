@@ -91,6 +91,12 @@ Open an [issue](https://github.com/jjsslee/orrery/issues) with your app version,
 
 ### CodePipeline deployment status
 
-Open **CodePipeline**, select a profile, region and pipeline to view execution history (20 per page), execution-specific stages/actions and AWS failure messages. Running/stopping executions refresh every 15 seconds while visible; errors require manual retry. Refresh manually to discover new executions after completion. Retries remain visible and mixed stage statuses are preserved. Missing action records do not mean success. No mutations, retries or approvals are offered.
+Open **CodePipeline → Add pipelines** to monitor multiple pipelines as stage flows. Select a row name to inspect actions, AWS failure messages and execution history on the right. Search and status filters only affect visible rows. The × button removes a pipeline from your board, never from AWS.
 
-Required CodePipeline read permissions: `ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`. Details use the execution’s pipeline version; unavailable definitions surface as errors. Build logs are not fetched. Action history has a 20-page limit; exceeding it surfaces an error.
+Selections are saved automatically in browser localStorage, separately by profile, account and region, and restored on reload or restart. They do not sync across devices. Storage failures are shown explicitly. Deleted or inaccessible pipelines stay selected with a read error until removed manually.
+
+While visible, the board checks every 15 seconds when executions are running/stopping, otherwise every 60 seconds to discover new runs. Up to three pipelines are queried concurrently; one failure does not block other rows. Leaving the screen or changing scope cancels old requests. Historical selection in the inspector never replaces the latest execution on the board. Use **Follow latest execution** to return. History loads in pages of 20.
+
+Stage names and counts come from the execution’s pipeline version. Approval waits require an AWS Approval action. The board uses the latest attempt per action; the inspector preserves retry history. Missing or incomplete actions never imply stage success. CodeBuild logs are not fetched. No mutations, retries or approvals are offered.
+
+Required CodePipeline permissions: `ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`. Unavailable pipeline versions or action histories exceeding 20 pages surface as errors.

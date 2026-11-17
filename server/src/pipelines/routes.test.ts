@@ -11,7 +11,7 @@ test('execution detail uses the selected execution and version, paginates action
     switch (command.constructor.name) {
       case 'GetPipelineExecutionCommand': return { pipelineExecution: { status: 'Failed', pipelineVersion: 4, variables: [{ resolvedValue: 'private' }] } };
       case 'GetPipelineCommand': return { pipeline: { stages: [{ name: 'Build' }, { name: 'Deploy' }] } };
-      case 'ListActionExecutionsCommand': return command.input.nextToken ? { actionExecutionDetails: [] } : { nextToken: 'page2', actionExecutionDetails: [{ stageName: 'Build', actionName: 'Compile', status: 'Failed', input: { configuration: { Secret: 'private' } }, output: { outputVariables: { Secret: 'private' }, executionResult: { errorDetails: { message: 'build failed' } } } }] };
+      case 'ListActionExecutionsCommand': return command.input.nextToken ? { actionExecutionDetails: [] } : { nextToken: 'page2', actionExecutionDetails: [{ stageName: 'Build', actionName: 'Compile', status: 'Failed', input: { actionTypeId: { category: 'Build' }, configuration: { Secret: 'private' } }, output: { outputVariables: { Secret: 'private' }, executionResult: { errorDetails: { message: 'build failed' } } } }] };
     }
   } };
   const app = Fastify();
@@ -20,6 +20,8 @@ test('execution detail uses the selected execution and version, paginates action
   const result = await app.inject(`/api/pipelines?name=demo&execution=${id}`);
   assert.equal(result.statusCode, 200);
   assert.equal(result.json().actions[0].error, 'build failed');
+  assert.equal(result.json().actions[0].category, 'Build');
+  assert.deepEqual(result.json().stageActions, { Build: [], Deploy: [] });
   assert.deepEqual(result.json().stages, ['Build', 'Deploy']);
   assert.equal(calls[1].input.version, 4);
   for (const call of calls.filter(c => c.name === 'ListActionExecutionsCommand')) assert.equal(call.input.filter.pipelineExecutionId, id);
