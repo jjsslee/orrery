@@ -1,3 +1,4 @@
+import { Pipelines } from './views/Pipelines';
 import { uiText, useLanguage } from './i18n';
 import './styles/topology-guide.css';
 import './styles/cleanup.css';
@@ -50,7 +51,7 @@ export default function App() {
   // only while the tab is visible. CloudWatch metrics (metered) are never refreshed here.
   const live = useStore((s) => s.live);
   useEffect(() => {
-    if (!live || view === 'monitoring' || view === 'cleanup') return;
+    if (!live || view === 'pipelines' || view === 'monitoring' || view === 'cleanup') return;
     let statusTimer: ReturnType<typeof setInterval> | undefined;
     let graphTimer: ReturnType<typeof setInterval> | undefined;
     const start = () => {
@@ -88,7 +89,7 @@ export default function App() {
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
       }
       const editing = e.target instanceof HTMLElement && (e.target.matches('input, textarea, select') || e.target.isContentEditable);
-      if (e.key === '/' && !editing && view !== 'monitoring' && view !== 'cleanup') {
+      if (e.key === '/' && !editing && view !== 'monitoring' && view !== 'cleanup' && view !== 'pipelines') {
         e.preventDefault();
         if (window.matchMedia('(max-width: 820px)').matches && !filtersOpen) setFiltersOpen(true);
         else document.querySelector<HTMLInputElement>('.search input')?.focus();
@@ -99,21 +100,21 @@ export default function App() {
   }, [select, filtersOpen, view]);
 
   return (
-    <div className={`app ${view === 'cleanup' ? 'cleanup-app' : view === 'monitoring' ? 'monitoring-app' : selectedId ? 'has-inspector' : ''} ${filtersOpen ? 'filters-open' : ''}`}>
+    <div className={`app ${view === 'cleanup' ? 'cleanup-app' : (view === 'monitoring' || view === 'pipelines') ? 'monitoring-app' : selectedId ? 'has-inspector' : ''} ${filtersOpen ? 'filters-open' : ''}`}>
       <TopBar filtersOpen={filtersOpen} onToggleFilters={() => filtersOpen ? closeFilters() : setFiltersOpen(true)} />
-      {view !== 'monitoring' && view !== 'cleanup' && <>
+      {view !== 'monitoring' && view !== 'cleanup' && view !== 'pipelines' && <>
         {filtersOpen && <button type="button" className="rail-backdrop" aria-label={uiText("필터 닫기")} tabIndex={-1} onClick={closeFilters} />}
         <Rail onClose={closeFilters} />
       </>}
-      <main className="stage" aria-label={view === 'cleanup' ? uiText('정리 후보') : view === 'monitoring' ? uiText('모니터링') : view === 'topology' ? uiText('토폴로지') : uiText('유형별 보기')}>
-        {view === 'monitoring' ? <Monitoring /> : <>
+      <main className="stage" aria-label={view === 'pipelines' ? 'CodePipeline' : view === 'cleanup' ? uiText('정리 후보') : view === 'monitoring' ? uiText('모니터링') : view === 'topology' ? uiText('토폴로지') : uiText('유형별 보기')}>
+        {view === 'pipelines' ? <Pipelines /> : view === 'monitoring' ? <Monitoring /> : <>
         {view === 'cleanup' ? <Cleanup /> : view === 'topology' ? (graph ? <Topology /> : null) : <TypeView />}
         <LoadOverlay />
         {setup === 'needed' && <SetupGuide />}
         {setup === 'done' && !graph && idle && (region ? <div className="empty">{uiText("프로필을 선택하면 수집을 시작합니다.")}</div> : <RegionPrompt />)}
         </>}
       </main>
-      {view !== 'monitoring' && view !== 'cleanup' && selectedId && <Inspector />}
+      {view !== 'monitoring' && view !== 'cleanup' && view !== 'pipelines' && selectedId && <Inspector />}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { PipelinePage, PipelineHistory, PipelineDetail } from '@orrery/shared';
 import type { SsoLoginStatus, CleanupHistory, CollectEvent, MetricsBundle, ProfileInfo, ResourceGraph, StatusBundle, MonitoringAlarmSnapshot, MonitoringResourceIndex, MonitoringResourceType, AlarmHistorySnapshot, MonitoringMetricsSnapshot, MonitoringRelatedSnapshot, MonitoringResourceResolution } from '@orrery/shared';
 import { authHeaders } from './auth';
 import { streamGraph } from './stream';
@@ -16,6 +17,9 @@ async function json<T>(url: string, signal?: AbortSignal, body?: unknown): Promi
 }
 
 export const api = {
+  pipelines: (profile: string, region: string, nextToken?: string, signal?: AbortSignal) => json<PipelinePage>(`/api/pipelines?${q({ profile, region, nextToken })}`, signal),
+  pipelineHistory: (profile: string, region: string, name: string, nextToken?: string, signal?: AbortSignal) => json<PipelineHistory>(`/api/pipelines?${q({ profile, region, name, nextToken })}`, signal),
+  pipelineDetail: (profile: string, region: string, name: string, execution: string, signal?: AbortSignal) => json<PipelineDetail>(`/api/pipelines?${q({ profile, region, name, execution })}`, signal),
   setLanguage: (language: 'en' | 'ko') => json<{ language: 'en' | 'ko' }>('/api/preferences/language', undefined, { language }),
   ssoLogin: (profile: string) => json<SsoLoginStatus>('/api/sso/login', undefined, { profile }),
   ssoLoginStatus: (id: string) => json<SsoLoginStatus>(`/api/sso/login/${encodeURIComponent(id)}`),

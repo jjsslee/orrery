@@ -1,0 +1,11 @@
+.pipelines { height:100%; overflow:auto; padding:24px; box-sizing:border-box; }
+.pipeline-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.pipeline-controls select { max-width: min(500px, 75vw); padding:8px; }
+.pipeline-columns { display:grid; grid-template-columns:minmax(240px, 1fr) minmax(300px, 2fr); gap:24px; }
+.pipeline-columns section { min-width:0; }
+.pipeline-execution { display:flex; flex-direction:column; text-align:left; gap:6px; width:100%; padding:12px; margin-bottom:8px; }
+.pipeline-execution[aria-pressed=true] { outline:2px solid #678de6; }
+.pipeline-stage { border:1px solid #7b839755; border-radius:8px; padding:16px; margin:12px 0; }
+.pipeline-stage pre, .pipelines code { white-space:pre-wrap; overflow-wrap:anywhere; }
+.pipeline-stage pre { padding:12px; background:#d44a4a18; }
+@media(max-width:820px) { .pipeline-columns { grid-template-columns:1fr; } .pipelines { padding:16px; } }

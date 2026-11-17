@@ -88,3 +88,9 @@ Orrery 계정이나 별도의 서버 가입은 필요 없습니다. AWS 자격�
 [GitHub Issues](https://github.com/jjsslee/orrery/issues)에 앱 버전, OS·CPU, 기대한 동작과 예시를 알려주세요. 자격증명·실제 계정 목록·내부 인프라 정보는 제외해 주세요.
 
 [상세 사용 안내와 프로젝트 문서](docs/README.md) · [릴리즈 이력](https://github.com/jjsslee/orrery/releases)
+
+### CodePipeline 배포 현황
+
+상단 **CodePipeline**에서 프로필·리전과 파이프라인을 선택하면 실행 이력(20개씩 추가 조회), 선택한 실행의 단계·액션 상태, 실패 원인을 확인합니다. 진행 중/중지 중 실행은 화면이 보일 때 15초마다 갱신하며 오류 시 수동 재시도합니다. 완료 후 새 실행은 새로고침으로 확인합니다. 재시도 이력은 함께 표시하므로 단계에 여러 상태가 나타날 수 있습니다. 실행 기록 없음은 성공을 의미하지 않습니다. AWS 변경·재실행·승인 기능은 없습니다.
+
+필요한 읽기 권한: `codepipeline:ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`(모두 `codepipeline:` 접두사). 실행 당시 버전의 구성을 조회하지 못하면 오류를 표시합니다. AWS가 제공한 실패 메시지만 표시하며 CodeBuild 로그는 조회하지 않습니다. 상세 액션 이력은 최대 20페이지이며 초과 시 오류를 표시합니다.

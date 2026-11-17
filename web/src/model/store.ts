@@ -5,7 +5,7 @@ import { useMonitoring } from './monitoring';
 import { sameTagFilter, type TagFilter } from './tags';
 import { TYPE_META } from './types';
 
-export type ViewMode = 'topology' | 'types' | 'monitoring' | 'cleanup';
+export type ViewMode = 'topology' | 'types' | 'pipelines' | 'monitoring' | 'cleanup';
 
 export interface Overlays {
   security: boolean;
@@ -173,7 +173,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme: loadPrefs().theme ?? 'dark',
   metricsLoading: false,
   loading: { active: false, reports: {}, order: [] },
-  view: loadPrefs().view === 'monitoring' ? 'monitoring' : 'topology',
+  view: loadPrefs().view === 'pipelines' ? 'pipelines' : loadPrefs().view === 'monitoring' ? 'monitoring' : 'topology',
   query: '',
   categories: { compute: true, network: true, database: true, storage: true, security: true, integration: true },
   hiddenTypes: new Set(OPTIONAL_TYPES),
@@ -204,7 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
       const region = get().region || profiles.find((p) => p.name === profile)?.region || '';
       // The choice is persisted only after a successful load (see load()), so a broken saved profile does not stick.
       set({ profiles, defaultProfile, collectorLabels, profile, region, setup: 'done' });
-      if (get().view !== 'monitoring') void get().load(false);
+      if (get().view !== 'monitoring' && get().view !== 'pipelines') void get().load(false);
       else fetchIdentity(profile, region);
       fetchRegions(profile, region);
     } catch (error) {
@@ -232,7 +232,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ regions: [], metricsLoading: false, liveBusy: false, metricsError: undefined, statusError: undefined, liveStatusAt: undefined, liveGraphAt: undefined, profile, region, profileChosen: true, graph: undefined, metrics: undefined, selectedId: undefined, identity: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ profile, region });
     fetchRegions(profile, region);
-    if (get().view !== 'monitoring') await get().load(false);
+    if (get().view !== 'monitoring' && get().view !== 'pipelines') await get().load(false);
     else fetchIdentity(get().profile, region);
   },
 
@@ -241,7 +241,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ metricsLoading: false, liveBusy: false, metricsError: undefined, statusError: undefined, liveStatusAt: undefined, liveGraphAt: undefined, identity: undefined, region, graph: undefined, metrics: undefined, selectedId: undefined, expanded: new Set(), tagFilters: [] });
     savePrefs({ region });
     fetchRegions(get().profile, region);
-    if (get().view !== 'monitoring') await get().load(false);
+    if (get().view !== 'monitoring' && get().view !== 'pipelines') await get().load(false);
     else fetchIdentity(get().profile, region);
   },
 
@@ -349,7 +349,7 @@ export const useStore = create<AppState>((set, get) => ({
   setView: (view) => {
     if (view === get().view) return;
     if (view !== 'monitoring') useMonitoring.setState({ pendingResource: undefined });
-    if (view === 'monitoring') {
+    if (view === 'monitoring' || view === 'pipelines') {
       cancelRequests();
       set({ view, loading: { active: false, reports: {}, order: [] }, metricsLoading: false, liveBusy: false });
       fetchRegions(get().profile, get().region);

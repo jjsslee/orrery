@@ -1,3 +1,4 @@
+import { registerPipelineRoutes } from './pipelines/routes.ts';
 import { registerSsoLoginRoutes } from './aws/sso-login.ts';
 import { registerLanguageRoute } from './http/language.ts';
 import { registerCleanupRoutes } from './cleanup/routes.ts';
@@ -110,6 +111,7 @@ async function session(query: Record<string, unknown>): Promise<Session> {
     }, query.reconnect === '1');
 }
 
+registerPipelineRoutes(app, session);
 const alarmRepository = new AlarmRepository();
 registerMonitoringRoutes(app, session, alarmRepository, undefined, { getCached: (s) => cache.get<ResourceGraph>(scopeKey('graph-v9', s.source, s.account, s.region), Infinity), collect: (s) => collectGraph(s as Session) });
 

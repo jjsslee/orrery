@@ -88,3 +88,9 @@ If the new app does not start successfully, Orrery attempts to restore the previ
 Open an [issue](https://github.com/jjsslee/orrery/issues) with your app version, OS/CPU, expected behavior, and a sanitized example. Please leave out credentials, account inventories, and private infrastructure details.
 
 [Detailed guides and project documentation](docs/README.md) · [Release history](https://github.com/jjsslee/orrery/releases)
+
+### CodePipeline deployment status
+
+Open **CodePipeline**, select a profile, region and pipeline to view execution history (20 per page), execution-specific stages/actions and AWS failure messages. Running/stopping executions refresh every 15 seconds while visible; errors require manual retry. Refresh manually to discover new executions after completion. Retries remain visible and mixed stage statuses are preserved. Missing action records do not mean success. No mutations, retries or approvals are offered.
+
+Required CodePipeline read permissions: `ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`. Details use the execution’s pipeline version; unavailable definitions surface as errors. Build logs are not fetched. Action history has a 20-page limit; exceeding it surfaces an error.

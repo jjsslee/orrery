@@ -40,6 +40,7 @@ export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?:
           <button type="button" role="tab" aria-selected={view === 'topology'} className={`seg ${view === 'topology' ? 'on' : ''}`} onClick={() => setView('topology')}>{uiText("토폴로지")}</button>
           <button type="button" role="tab" aria-selected={view === 'types'} className={`seg ${view === 'types' ? 'on' : ''}`} onClick={() => setView('types')}>{uiText("유형별")}</button>
           <button type="button" role="tab" aria-selected={view === 'monitoring'} className={`seg ${view === 'monitoring' ? 'on' : ''}`} onClick={() => setView('monitoring')}>{uiText("모니터링")}</button>
+          <button type="button" role="tab" aria-selected={view === 'pipelines'} className={`seg ${view === 'pipelines' ? 'on' : ''}`} onClick={() => setView('pipelines')}>CodePipeline</button>
           <button type="button" role="tab" aria-selected={view === 'cleanup'} className={`seg ${view === 'cleanup' ? 'on' : ''}`} onClick={() => setView('cleanup')}>{uiText("정리 후보")}</button>
         </div>
 
@@ -52,7 +53,7 @@ export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?:
           </select>
         </label>
 
-        {view !== 'monitoring' && view !== 'cleanup' && <button type="button" className="btn filter-toggle" aria-label={uiText("검색·필터")} aria-expanded={filtersOpen} aria-controls="resource-filters" onClick={onToggleFilters}><SlidersHorizontal size={15} aria-hidden /><span>{uiText("필터")}</span></button>}
+        {view !== 'monitoring' && view !== 'cleanup' && view !== 'pipelines' && <button type="button" className="btn filter-toggle" aria-label={uiText("검색·필터")} aria-expanded={filtersOpen} aria-controls="resource-filters" onClick={onToggleFilters}><SlidersHorizontal size={15} aria-hidden /><span>{uiText("필터")}</span></button>}
         <TopologyGuide />
         <span className="readonly" title={uiText("서버의 모든 AWS 호출은 Describe/List/Get 계열만 허용하는 가드를 거칩니다")}>
           <Eye size={13} aria-hidden /><span className="readonly-text">{uiText("읽기 전용")}</span>
@@ -88,7 +89,7 @@ export function TopBar({ filtersOpen = false, onToggleFilters }: { filtersOpen?:
           <SsoLogin />
         </div>
         <div className="topbar-spacer" />
-        {view !== 'monitoring' && view !== 'cleanup' && <>
+        {view !== 'monitoring' && view !== 'cleanup' && view !== 'pipelines' && <>
         <span className="topbar-sep" aria-hidden />
         <button
           type="button"

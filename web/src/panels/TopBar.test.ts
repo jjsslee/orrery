@@ -7,5 +7,5 @@ import { TopBar } from './TopBar';
 test('navigation exposes topology, types, monitoring and cleanup', () => {
   const html = renderToStaticMarkup(createElement(TopBar));
   const tabs = [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]);
-  assert.deepEqual(tabs, ['토폴로지', '유형별', '모니터링', '정리 후보']);
+  assert.deepEqual(tabs, ['토폴로지', '유형별', '모니터링', 'CodePipeline', '정리 후보']);
 });

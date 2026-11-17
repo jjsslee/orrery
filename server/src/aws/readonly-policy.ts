@@ -39,6 +39,7 @@ export const READ_ONLY_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> =
     'DescribeAlarmsCommand',
     'GetMetricDataCommand',
   ]),
+  CodePipelineClient: new Set(['ListPipelinesCommand', 'ListPipelineExecutionsCommand', 'GetPipelineExecutionCommand', 'GetPipelineCommand', 'ListActionExecutionsCommand']),
   CodeBuildClient: new Set([
     'BatchGetProjectsCommand',
     'ListProjectsCommand',

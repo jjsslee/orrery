@@ -536,3 +536,5 @@ export interface SsoLoginStatus {
   state: 'pending' | 'succeeded' | 'failed' | 'cancelled';
   message?: string;
 }
+
+export type { PipelinePage, PipelineHistory, PipelineDetail, PipelineAction, PipelineExecutionSummary } from './pipelines.ts';
