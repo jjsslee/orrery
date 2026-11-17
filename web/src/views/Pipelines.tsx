@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Circle, ExternalLink, GitCommitHorizontal, LoaderCircle, Pause, Plus, RefreshCw, Search, X } from 'lucide-react';
 import type { PipelineDetail, PipelineHistory, PipelinePage } from '@orrery/shared';
-import { actionTone, latestActions, pipelinePool, pipelineRunning, readPipelineSelection, savePipelineSelection, selectionKey, stageTone, type PipelineTone } from '../model/pipelines';
+import { pipelineMatches, selectPipelineResults, actionTone, latestActions, pipelinePool, pipelineRunning, readPipelineSelection, savePipelineSelection, selectionKey, stageTone, type PipelineTone } from '../model/pipelines';
 import { api } from '../api/client';
 import { useStore } from '../model/store';
 import { locale, useLanguage } from '../i18n';
@@ -49,20 +49,32 @@ export function Workspace({ profile, region, account }: { profile: string; regio
   const [saveError, setSaveError] = useState(false), [picker, setPicker] = useState(!names.length);
   const [selected, setSelected] = useState(names[0] ?? ''), [query, setQuery] = useState(''), [filter, setFilter] = useState('all');
   const [snapshots, setSnapshots] = useState<Record<string, Snapshot>>({}), [busy, setBusy] = useState(false), [revision, setRevision] = useState(0);
-  const [page, setPage] = useState<PipelinePage>({ names: [] }), [listToken, setListToken] = useState<string>(), [listRevision, setListRevision] = useState(0);
-  const [listError, setListError] = useState(''), [listBusy, setListBusy] = useState(false), [pickerQuery, setPickerQuery] = useState('');
+  const [page, setPage] = useState<PipelinePage>({ names: [] }), [listRevision, setListRevision] = useState(0);
+  const [listError, setListError] = useState(''), [listBusy, setListBusy] = useState(true), [pickerQuery, setPickerQuery] = useState('');
   const changeNames = (next: string[]) => {
     setNames(next); setSelected(s => next.includes(s) ? s : next[0] ?? '');
     try { setSaveError(!savePipelineSelection(localStorage, storageKey, next)); } catch { setSaveError(true); }
   };
   useEffect(() => {
-    if (!picker) return;
-    const controller = new AbortController(); setListBusy(true); setListError('');
-    api.pipelines(profile, region, listToken, controller.signal).then(value => {
-      if (!controller.signal.aborted) setPage(p => ({ ...value, names: listToken ? [...new Set([...p.names, ...value.names])] : value.names }));
-    }).catch(e => { if (!controller.signal.aborted) setListError(e.message); }).finally(() => { if (!controller.signal.aborted) setListBusy(false); });
+    const controller = new AbortController(); setListBusy(true); setListError(''); setPage({ names: [], tags: {} });
+    const load = async () => {
+      let nextToken: string | undefined;
+      const seen = new Set<string>();
+      try {
+        do {
+          const value = await api.pipelines(profile, region, nextToken, controller.signal);
+          if (controller.signal.aborted) return;
+          setPage(previous => ({ names: [...new Set([...previous.names, ...value.names])], tags: { ...previous.tags, ...value.tags }, nextToken: value.nextToken }));
+          nextToken = value.nextToken;
+          if (nextToken && seen.has(nextToken)) throw new Error('Repeated pipeline page token');
+          if (nextToken) seen.add(nextToken);
+        } while (nextToken);
+      } catch (error) { if (!controller.signal.aborted) setListError((error as Error).message); }
+      finally { if (!controller.signal.aborted) setListBusy(false); }
+    };
+    void load();
     return () => controller.abort();
-  }, [profile, region, picker, listToken, listRevision]);
+  }, [profile, region, listRevision]);
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined; let running = false;
     const refresh = async () => {
@@ -88,17 +100,24 @@ export function Workspace({ profile, region, account }: { profile: string; regio
     return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('visibilitychange', visibility); };
   }, [profile, region, names, revision]);
   const active = names.some(name => snapshots[name]?.history?.executions.some(e => pipelineRunning(e.status)));
-  const visibleNames = names.filter(name => name.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || rowTone(snapshots[name]) === filter));
+  const visibleNames = names.filter(name => pipelineMatches(name, page.tags?.[name]?.tags, query) && (filter === 'all' || rowTone(snapshots[name]) === filter));
   const selectedSnapshot = snapshots[selected];
+  const pickerNames = [...new Set([...names, ...page.names])].filter(name => pipelineMatches(name, page.tags?.[name]?.tags, pickerQuery));
+  const tagErrors = Object.values(page.tags ?? {}).filter(value => value.error).length;
+  const bulkDisabled = listBusy || !!listError || !pickerNames.length;
   return <section className="pipelines">
     <header className="pipeline-header"><div><h1>{t('배포 모니터링', 'Deployment monitoring')} <span className="pipeline-readonly">{t('조회 전용', 'Read only')}</span></h1><p>{t('여러 파이프라인의 진행 상황을 한눈에 확인하세요.', 'Follow your pipelines at a glance.')} <span>{profile} / {region}</span></p></div><div className="pipeline-controls"><span className="pipeline-live"><i />{active ? t('15초 자동 갱신', 'Refresh every 15s') : t('60초 자동 갱신', 'Refresh every 60s')}</span><button className="btn" disabled={busy} onClick={() => setRevision(v => v + 1)}><RefreshCw size={15} className={busy ? 'pipeline-spin' : ''} />{t('새로고침', 'Refresh')}</button></div></header>
     <div className="pipeline-summary" aria-label={t('상태 필터', 'Status filters')}>{(['all', 'running', 'failed', 'waiting', 'success', 'idle'] as const).map(tone => <button key={tone} className={tone === 'all' ? '' : `tone-${tone}`} aria-pressed={filter === tone} onClick={() => setFilter(tone)}>{tone !== 'all' && <StatusIcon tone={tone} />}{tone === 'all' ? t('전체', 'All') : statusText(tone, t)}<b>{tone === 'all' ? names.length : names.filter(name => rowTone(snapshots[name]) === tone).length}</b></button>)}</div>
     {saveError && <p className="pipeline-error" role="alert">{t('목록을 저장하지 못했습니다. 이 화면에서만 선택이 유지됩니다.', 'Could not save your selection. It is kept for this session only.')}</p>}
-    <div className="pipeline-layout"><section className="pipeline-board"><div className="pipeline-toolbar"><label className="pipeline-search"><Search size={16} /><input aria-label={t('파이프라인 검색', 'Search pipelines')} placeholder={t('파이프라인 검색', 'Search pipelines')} value={query} onChange={e => setQuery(e.target.value)} /></label><span>{names.length}{t('개 선택', ' selected')}</span><button className="btn" aria-expanded={picker} onClick={() => setPicker(v => !v)}><Plus size={16} />{t('파이프라인 추가', 'Add pipelines')}</button></div>
-    {picker && <section className="pipeline-picker" aria-label={t('파이프라인 선택', 'Select pipelines')}><div className="pipeline-controls"><strong>{t('볼 파이프라인을 선택하세요', 'Choose pipelines to monitor')}</strong><button className="btn" onClick={() => setPicker(false)}>{t('완료', 'Done')}</button></div><input aria-label={t('추가할 파이프라인 검색', 'Search available pipelines')} placeholder={t('이름으로 검색', 'Search by name')} value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
-      <div className="pipeline-options">{[...new Set([...names, ...page.names])].filter(name => name.toLowerCase().includes(pickerQuery.toLowerCase())).map(name => <label key={name}><input type="checkbox" checked={names.includes(name)} onChange={e => changeNames(e.target.checked ? [...names, name] : names.filter(n => n !== name))} /><span>{name}</span></label>)}</div>
-      {listError && <p role="alert" className="pipeline-error">{listError}</p>}{listBusy && <p role="status">{t('목록 조회 중…', 'Loading pipelines…')}</p>}{!listBusy && !listError && !page.names.length && <p>{t('이 리전에 파이프라인이 없습니다.', 'No pipelines in this region.')}</p>}
-      <div className="pipeline-controls"><button className="btn" disabled={listBusy} onClick={() => { setListToken(undefined); setListRevision(v => v + 1); }}>{t('목록 새로고침', 'Refresh list')}</button>{page.nextToken && <button className="btn" disabled={listBusy} onClick={() => setListToken(page.nextToken)}>{t('목록 더 보기', 'More pipelines')}</button>}</div></section>}
+    <div className="pipeline-layout"><section className="pipeline-board"><div className="pipeline-toolbar"><label className="pipeline-search"><Search size={16} /><input aria-label={t('파이프라인 검색', 'Search pipelines')} placeholder={t('이름·태그 검색', 'Search names or tags')} value={query} onChange={e => setQuery(e.target.value)} /></label><span>{names.length}{t('개 선택', ' selected')}</span><button className="btn" aria-expanded={picker} onClick={() => setPicker(v => !v)}><Plus size={16} />{t('파이프라인 추가', 'Add pipelines')}</button></div>
+    {picker && <section className="pipeline-picker" aria-label={t('파이프라인 선택', 'Select pipelines')}><div className="pipeline-controls"><strong>{t('볼 파이프라인을 선택하세요', 'Choose pipelines to monitor')}</strong><button className="btn" onClick={() => setPicker(false)}>{t('완료', 'Done')}</button></div><input aria-label={t('추가할 파이프라인 검색', 'Search available pipelines')} placeholder={t('이름·태그 키·값 검색 (예: Environment=prod)', 'Name, tag key or value (e.g. Environment=prod)')} value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
+      <div className="pipeline-controls pipeline-bulk"><span>{pickerNames.length}{t('개 검색 결과', ' matches')}</span><button className="btn" disabled={bulkDisabled || pickerNames.every(name => names.includes(name))} onClick={() => changeNames(selectPipelineResults(names, pickerNames, true))}>{pickerQuery.trim() ? t('검색 결과 전체 선택', 'Select all results') : t('전체 선택', 'Select all')}</button><button className="btn" disabled={bulkDisabled || !pickerNames.some(name => names.includes(name))} onClick={() => changeNames(selectPipelineResults(names, pickerNames, false))}>{pickerQuery.trim() ? t('검색 결과 선택 해제', 'Deselect results') : t('전체 선택 해제', 'Deselect all')}</button></div>
+      <div className="pipeline-options">{pickerNames.map(name => <label key={name}><input type="checkbox" checked={names.includes(name)} onChange={e => changeNames(e.target.checked ? [...names, name] : names.filter(n => n !== name))} /><span>{name}<span className="pipeline-tags">{page.tags?.[name]?.tags.map(tag => <small key={tag.key}>{tag.key}={tag.value}</small>)}</span>{page.tags?.[name]?.error && <small className="pipeline-error">{t('태그 조회 실패', 'Tag lookup failed')}: {page.tags[name].error}</small>}</span></label>)}</div>
+      {!listBusy && !listError && !pickerNames.length && <p>{t('조건에 맞는 파이프라인이 없습니다.', 'No pipelines match these filters.')}</p>}
+      <button className="btn" disabled={listBusy} onClick={() => setListRevision(v => v + 1)}>{t('목록·태그 새로고침', 'Refresh list and tags')}</button></section>}
+    {listBusy && <p className="pipeline-catalog-note" role="status">{t('전체 목록·태그 조회 중… 완료 후 전체 선택할 수 있습니다.', 'Loading all pipelines and tags… Bulk selection is available when complete.')}</p>}
+    {listError && <p className="pipeline-error pipeline-catalog-note" role="alert">{t('목록 조회 미완료', 'Pipeline list incomplete')}: {listError} <button className="btn" onClick={() => setListRevision(v => v + 1)}>{t('다시 시도', 'Retry')}</button></p>}
+    {tagErrors > 0 && <p className="pipeline-catalog-note" role="status">{tagErrors}{t('개 파이프라인의 태그를 확인하지 못했습니다. 태그 검색에서 누락될 수 있으며 이름으로는 선택할 수 있습니다.', ' pipelines have unavailable tags. Tag searches may miss them; they can still be selected by name.')}</p>}
     {!names.length && <div className="pipeline-empty"><GitCommitHorizontal size={32} /><h2>{t('함께 볼 파이프라인을 추가하세요', 'Add pipelines to your board')}</h2><p>{t('선택한 목록은 이 브라우저에 자동 저장됩니다.', 'Your selection is saved automatically in this browser.')}</p></div>}
     {!!names.length && !visibleNames.length && <p className="pipeline-empty">{t('조건에 맞는 파이프라인이 없습니다.', 'No pipelines match these filters.')}</p>}
     <div className="pipeline-rows">{visibleNames.map(name => {

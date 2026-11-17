@@ -91,7 +91,11 @@ Open an [issue](https://github.com/jjsslee/orrery/issues) with your app version,
 
 ### CodePipeline deployment status
 
-Open **CodePipeline → Add pipelines** to monitor multiple pipelines as stage flows. Select a row name to inspect actions, AWS failure messages and execution history on the right. Search and status filters only affect visible rows. The × button removes a pipeline from your board, never from AWS.
+Open **CodePipeline → Add pipelines** to monitor multiple pipelines as stage flows. Select a row name to inspect actions, AWS failure messages and execution history on the right. Name/tag search and status filters only affect visible rows. The × button removes a pipeline from your board, never from AWS.
+
+Search matches names, tag keys, values and `key=value` case-insensitively by substring (e.g. `Environment=prod`). In **Add pipelines**, **Select all** and **Deselect all** apply to all search results while preserving selections outside the search. All catalog pages load automatically before bulk selection is enabled. A failed catalog page disables bulk selection so partial results cannot be mistaken for the full list.
+
+Tags load on screen entry and **Refresh list and tags**, independently of execution polling. The `codepipeline:ListTagsForResource` permission is required. Tag failures are shown per pipeline with a warning about incomplete tag search; name-based selection remains available. Tags are not stored in localStorage.
 
 Selections are saved automatically in browser localStorage, separately by profile, account and region, and restored on reload or restart. They do not sync across devices. Storage failures are shown explicitly. Deleted or inaccessible pipelines stay selected with a read error until removed manually.
 
@@ -99,4 +103,4 @@ While visible, the board checks every 15 seconds when executions are running/sto
 
 Stage names and counts come from the execution’s pipeline version. Approval waits require an AWS Approval action. The board uses the latest attempt per action; the inspector preserves retry history. Missing or incomplete actions never imply stage success. CodeBuild logs are not fetched. No mutations, retries or approvals are offered.
 
-Required CodePipeline permissions: `ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`. Unavailable pipeline versions or action histories exceeding 20 pages surface as errors.
+Required CodePipeline permissions: `ListPipelines`, `ListPipelineExecutions`, `GetPipelineExecution`, `GetPipeline`, `ListActionExecutions`, `ListTagsForResource`. Unavailable pipeline versions or action histories exceeding 20 pages surface as errors.

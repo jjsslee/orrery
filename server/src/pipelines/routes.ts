@@ -1,18 +1,33 @@
+import pLimit from 'p-limit';
 import type { FastifyInstance } from 'fastify';
-import { CodePipelineClient, ListPipelinesCommand, ListPipelineExecutionsCommand, GetPipelineExecutionCommand, GetPipelineCommand, ListActionExecutionsCommand } from '@aws-sdk/client-codepipeline';
+import { CodePipelineClient, ListPipelinesCommand, ListTagsForResourceCommand, ListPipelineExecutionsCommand, GetPipelineExecutionCommand, GetPipelineCommand, ListActionExecutionsCommand } from '@aws-sdk/client-codepipeline';
 import type { ClientFactory } from '../aws/clients.ts';
 import type { PipelineDetail, PipelineHistory, PipelinePage } from '@orrery/shared';
 
-export function registerPipelineRoutes(app: FastifyInstance, session: (query: Record<string, unknown>) => Promise<{ clients: ClientFactory }>) {
+export function registerPipelineRoutes(app: FastifyInstance, session: (query: Record<string, unknown>) => Promise<{ clients: ClientFactory; account: string; region: string; arn: string }>) {
   app.get<{ Querystring: Record<string, string> }>('/api/pipelines', async req => {
     const q = req.query;
     if ((q.name && !/^[A-Za-z0-9.@_-]{1,100}$/.test(q.name)) || (q.execution && !/^[a-f0-9-]{36}$/.test(q.execution)) || (q.nextToken && q.nextToken.length > 4096) || (q.execution && !q.name)) {
       throw Object.assign(new Error('Invalid pipeline query'), { statusCode: 400 });
     }
-    const client = (await session(q)).clients.get(CodePipelineClient);
+    const scope = await session(q);
+    const client = scope.clients.get(CodePipelineClient);
     if (!q.name) {
       const result = await client.send(new ListPipelinesCommand({ maxResults: 100, nextToken: q.nextToken }));
-      return { names: (result.pipelines ?? []).flatMap(p => p.name ? [p.name] : []), nextToken: result.nextToken } satisfies PipelinePage;
+      const names = (result.pipelines ?? []).flatMap(p => p.name ? [p.name] : []);
+      const limit = pLimit(3);
+      const entries = await Promise.all(names.map(name => limit(async () => {
+        try {
+          const resourceArn = `arn:${scope.arn.split(':')[1]}:codepipeline:${scope.region}:${scope.account}:${name}`;
+          const result = await client.send(new ListTagsForResourceCommand({ resourceArn }));
+          // This API returns all tags in one call; do not report unexpected partial data as complete.
+          if (result.nextToken) throw new Error('Incomplete pipeline tags');
+          return [name, { tags: (result.tags ?? []).map(tag => ({ key: tag.key!, value: tag.value ?? '' })) }] as const;
+        } catch (error) {
+          return [name, { tags: [], error: (error as Error).message }] as const;
+        }
+      })));
+      return { names, nextToken: result.nextToken, tags: Object.fromEntries(entries) } satisfies PipelinePage;
     }
     if (!q.execution) {
       const result = await client.send(new ListPipelineExecutionsCommand({ pipelineName: q.name, maxResults: 20, nextToken: q.nextToken }));

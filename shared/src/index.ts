@@ -537,4 +537,4 @@ export interface SsoLoginStatus {
   message?: string;
 }
 
-export type { PipelinePage, PipelineHistory, PipelineDetail, PipelineAction, PipelineExecutionSummary } from './pipelines.ts';
+export type { PipelinePage, PipelineTags, PipelineHistory, PipelineDetail, PipelineAction, PipelineExecutionSummary } from './pipelines.ts';

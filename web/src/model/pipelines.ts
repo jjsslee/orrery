@@ -48,3 +48,13 @@ export async function pipelinePool<T>(items: T[], signal: AbortSignal, work: (it
     while (!signal.aborted && next < items.length) await work(items[next++]);
   }));
 }
+
+export function pipelineMatches(name: string, tags: { key: string; value: string }[] | undefined, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  return !needle || name.toLowerCase().includes(needle) || (tags ?? []).some(({ key, value }) =>
+    [key, value, `${key}=${value}`].some(text => text.toLowerCase().includes(needle)));
+}
+export function selectPipelineResults(selected: string[], results: string[], checked: boolean): string[] {
+  const matching = new Set(results);
+  return checked ? [...new Set([...selected, ...results])] : selected.filter(name => !matching.has(name));
+}

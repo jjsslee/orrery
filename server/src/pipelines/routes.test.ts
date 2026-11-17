@@ -15,7 +15,7 @@ test('execution detail uses the selected execution and version, paginates action
     }
   } };
   const app = Fastify();
-  registerPipelineRoutes(app, async () => ({ clients: { get: () => client } as unknown as ClientFactory }));
+  registerPipelineRoutes(app, async () => ({ clients: { get: () => client } as unknown as ClientFactory, account: '111111111111', region: 'ap-northeast-2', arn: 'arn:aws:iam::111111111111:user/demo' }));
   const id = '11111111-1111-1111-1111-111111111111';
   const result = await app.inject(`/api/pipelines?name=demo&execution=${id}`);
   assert.equal(result.statusCode, 200);
@@ -39,5 +39,28 @@ test('invalid queries cannot reach credentials; AWS errors are not empty success
   const denied = await app.inject('/api/pipelines');
   assert.equal(denied.statusCode, 500);
   assert.match(denied.body, /AccessDenied/);
+  await app.close();
+});
+
+test('pipeline catalog returns tags from the authenticated partition and isolates tag denial', async () => {
+  const requests: any[] = []; let active = 0, peak = 0;
+  const client = { send: async (command: any) => {
+    requests.push(command.input);
+    if (command.constructor.name === 'ListPipelinesCommand') return { pipelines: ['api', 'denied', 'web', 'worker'].map(name => ({ name })), nextToken: 'next-page' };
+    peak = Math.max(peak, ++active);
+    await new Promise(resolve => setTimeout(resolve, 1)); active--;
+    if (command.input.resourceArn.endsWith(':denied')) throw new Error('AccessDenied');
+    return { tags: [{ key: 'Environment', value: 'Prod' }, { key: 'Empty', value: '' }] };
+  } };
+  const app = Fastify();
+  registerPipelineRoutes(app, async () => ({ clients: { get: () => client } as unknown as ClientFactory, account: '111111111111', region: 'cn-north-1', arn: 'arn:aws-cn:iam::111111111111:user/demo' }));
+  const response = await app.inject('/api/pipelines?nextToken=previous-page');
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.nextToken, 'next-page'); assert.equal(requests[0].nextToken, 'previous-page');
+  assert.equal(requests[1].resourceArn, 'arn:aws-cn:codepipeline:cn-north-1:111111111111:api');
+  assert.deepEqual(body.tags.api.tags, [{ key: 'Environment', value: 'Prod' }, { key: 'Empty', value: '' }]);
+  assert.equal(body.tags.denied.error, 'AccessDenied'); assert.ok(body.names.includes('denied'));
+  assert.equal(peak, 3);
   await app.close();
 });

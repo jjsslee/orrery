@@ -43,3 +43,17 @@ test('board bounds concurrent lookups and stops scheduling removed scopes', asyn
   });
   assert.equal(peak, 3); assert.equal(calls, 3);
 });
+
+import { pipelineMatches, selectPipelineResults } from './pipelines';
+test('pipeline search matches names, tag keys, values and key=value without confusing tags', () => {
+  const tags = [{ key: 'Environment', value: 'Prod' }, { key: 'Team', value: 'Guest Experience' }];
+  for (const query of [' api ', 'environment', 'PROD', 'Environment=Prod', 'guest experience', '']) assert.equal(pipelineMatches('api-service', tags, query), true, query);
+  assert.equal(pipelineMatches('api-service', tags, 'Environment=Guest'), false);
+  assert.equal(pipelineMatches('api-service', undefined, 'prod'), false);
+  assert.equal(pipelineMatches('api-service', undefined, 'API'), true);
+});
+test('bulk selection preserves choices outside the search and deduplicates all pages', () => {
+  assert.deepEqual(selectPipelineResults(['outside', 'api'], ['api', 'worker', 'worker'], true), ['outside', 'api', 'worker']);
+  assert.deepEqual(selectPipelineResults(['outside', 'api', 'worker'], ['api', 'worker'], false), ['outside']);
+  assert.deepEqual(selectPipelineResults(['outside'], [], true), ['outside']);
+});
