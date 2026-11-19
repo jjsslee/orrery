@@ -1,4 +1,11 @@
 import type { PipelineAction } from '@orrery/shared';
+export function pipelineConsoleUrl(name: string, region: string): string {
+  const domain = region.startsWith('cn-') ? 'console.amazonaws.cn' : 'console.aws.amazon.com';
+  return `https://${domain}/codesuite/codepipeline/pipelines/${encodeURIComponent(name)}/view?region=${encodeURIComponent(region)}`;
+}
+export function approvalConsoleUrl(actions: PipelineAction[], name: string, region: string): string | undefined {
+  return latestActions(actions).some(a => a.category === 'Approval' && a.status === 'InProgress') ? pipelineConsoleUrl(name, region) : undefined;
+}
 export function pipelineRunning(status?: string): boolean {
   return status === 'InProgress' || status === 'Stopping';
 }

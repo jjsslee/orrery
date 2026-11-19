@@ -1,6 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pipelineRunning, stageStatuses } from './pipelines';
+import { approvalConsoleUrl, pipelineConsoleUrl } from './pipelines';
+test('pending approvals link to the pipeline console in the selected region', () => {
+  const url = 'https://console.aws.amazon.com/codesuite/codepipeline/pipelines/demo.prod/view?region=ap-northeast-2';
+  assert.equal(pipelineConsoleUrl('demo.prod', 'ap-northeast-2'), url);
+  assert.equal(approvalConsoleUrl([{ stage: 'Review', name: 'Approve', category: 'Approval', status: 'InProgress' }], 'demo.prod', 'ap-northeast-2'), url);
+  assert.equal(pipelineConsoleUrl('demo/name', 'cn-north-1'), 'https://console.amazonaws.cn/codesuite/codepipeline/pipelines/demo%2Fname/view?region=cn-north-1');
+});
+test('only latest pending approval attempts make a stage clickable', () => {
+  const approval = { stage: 'Review', name: 'Approve', category: 'Approval', status: 'InProgress', startedAt: '2026-01-01T01:00:00Z' };
+  for (const actions of [[], [{ ...approval, category: 'Build' }], ...['Succeeded', 'Failed', 'Stopped', 'Stopping'].map(status => [{ ...approval, status }]), [approval, { ...approval, status: 'Succeeded', startedAt: '2026-01-01T02:00:00Z' }]]) {
+    assert.equal(approvalConsoleUrl(actions, 'demo', 'us-east-1'), undefined);
+  }
+  assert.ok(approvalConsoleUrl([approval, { stage: 'Review', name: 'Other', status: 'Failed' }], 'demo', 'us-east-1'));
+});
 test('only running and stopping executions keep polling', () => {
   for (const status of ['InProgress', 'Stopping']) assert.equal(pipelineRunning(status), true);
   for (const status of ['Succeeded', 'Failed', 'Stopped', 'Superseded', 'Cancelled', undefined]) assert.equal(pipelineRunning(status), false);

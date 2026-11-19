@@ -93,6 +93,8 @@ Open an [issue](https://github.com/jjsslee/orrery/issues) with your app version,
 
 Open **CodePipeline → Add pipelines** to monitor multiple pipelines as stage flows. Select a row name to inspect actions, AWS failure messages and execution history on the right. Name/tag search and status filters only affect visible rows. The × button removes a pipeline from your board, never from AWS.
 
+Click a pending approval node in the board or inspector to open its pipeline in AWS Console. Check the account in your browser's AWS session before approving there. Orrery does not submit approvals itself.
+
 Search matches names, tag keys, values and `key=value` case-insensitively by substring (e.g. `Environment=prod`). In **Add pipelines**, **Select all** and **Deselect all** apply to all search results while preserving selections outside the search. All catalog pages load automatically before bulk selection is enabled. A failed catalog page disables bulk selection so partial results cannot be mistaken for the full list.
 
 Tags load on screen entry and **Refresh list and tags**, independently of execution polling. The `codepipeline:ListTagsForResource` permission is required. Tag failures are shown per pipeline with a warning about incomplete tag search; name-based selection remains available. Tags are not stored in localStorage.
